@@ -1,0 +1,21 @@
+--- TABLES FOUND ---
+[
+  {
+    "Tables_in_control_comedor": "menu_diario"
+  },
+  {
+    "Tables_in_control_comedor": "registros"
+  },
+  {
+    "Tables_in_control_comedor": "usuarios"
+  }
+]
+
+--- COLUMNS IN menu_diario ---
+id (int(11)), user_id (varchar(50)), fecha (date), opcion (int(11)), fecha_registro (datetime), sin_sopa (tinyint(1)), sin_arroz (tinyint(1))
+
+--- COLUMNS IN registros ---
+id (int(11)), user_id (varchar(50)), nombre (varchar(150)), fecha (date), hora (time), descripcion (varchar(50))
+
+--- COLUMNS IN usuarios ---
+zk_id (varchar(50)), nombre_completo (varchar(150))
