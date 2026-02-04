@@ -49,7 +49,29 @@ The application expects a MySQL table structure similar to this:
 2.  **Start Backend**: Run `node server.js` in the `backend/` folder.
 3.  **Start Frontend**: Run `npm run dev` in the `frontend/` folder.
 
-## 7. Troubleshooting & Error History
+## 7. Setup as Service (Auto-Start)
+To make the system run automatically on boot (like a server), we now use two separate services for better stability:
+
+1.  Run the installation script with sudo:
+    ```bash
+    sudo ./install_service.sh
+    ```
+2.  Thee services will be installed:
+    - `comedor-backend.service` (Node.js API)
+    - `comedor-frontend.service` (Web Interface)
+    - `comedor-worker.service` (Python Hardware Logic)
+3.  Check status:
+    - `sudo systemctl status comedor-frontend`
+    - `sudo systemctl status comedor-backend`
+    - `sudo systemctl status comedor-worker`
+
+## 8. Troubleshooting & Error History
+This section documents the specific issues encountered during implementation and their solutions.
+
+### 4. Integration: Monolithic vs Split Services
+**Issue**: Running both processes in a single `start_system.sh` script via systemd caused instability (Node exited immediately).
+**Cause**: Shell wrappers interacting with Systemd's `forking` type can cause signal handling issues.
+**Solution**: Refactored into two independent `Type=simple` services (`comedor-backend` and `comedor-worker`). This is the industry standard for robust deployments.
 This section documents the specific issues encountered during implementation and their solutions.
 
 ### 1. Frontend: Uncaught SyntaxError (LucideIcon)
@@ -81,13 +103,53 @@ Updated all SQL queries in `backend/routes/dashboardRoutes.js` to use `FROM regi
 const sql = "SELECT COUNT(*) as total FROM registros ...";
 ```
 
+
+### 5. Python: 'dotenv' Module Missing & PIP Restrictions
+**Issue**: Python worker failed with `ModuleNotFoundError: No module named 'dotenv'` and `pip install` failed with "externally managed environment".
+**Cause**: Modern Linux distributions block global `pip install` to protect system packages.
+**Solution**:
+Updated `start_system.sh` to automatically create and use a Python Virtual Environment (`venv`):
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 7. Frontend: systemctl status = exit-code 127 (Permission denied)
+**Issue**: Frontend service fails with `sh: 1: vite: Permission denied`.
+**Cause**: The `vite` binary in `node_modules` lost its execution permissions.
+**Solution**:
+Run: `chmod +x frontend/node_modules/.bin/vite` and restart service.
+
 ---
 
 # [ES] Versión en Español
 
 ... (Secciones 1-6 igual que arriba) ...
 
-## 7. Historial de Errores y Soluciones (Troubleshooting)
+## 7. Configuración como Servicio (Auto-Inicio)
+Para la máxima estabilidad, el sistema se divide en dos servicios independientes:
+
+1.  Ejecuta el script de instalación:
+    ```bash
+    sudo ./install_service.sh
+    ```
+2.  Se instalarán:
+    - `comedor-backend` (API Logs)
+    - `comedor-frontend` (Página Web)
+    - `comedor-worker` (Hardware Biómetrico/Impresora)
+3.  Verificar estado: `sudo systemctl status comedor-frontend`.
+
+## 8. Historial de Errores y Soluciones (Troubleshooting)
+### 7. Frontend: systemctl status = exit-code 127 (Permission denied)
+**Issue**: Frontend service fails with `sh: 1: vite: Permission denied`.
+**Cause**: The `vite` binary in `node_modules` lost its execution permissions.
+**Solution**:
+Run: `chmod +x frontend/node_modules/.bin/vite` and restart service.
+
+### 4. Integración: Servicios Separados
+**Problema**: Ejecutar todo en un solo script (`start_system.sh`) bajo Systemd causaba cierres inesperados.
+**Solución**: Se separó en dos servicios nativos de Linux (`Systemd Type=simple`). Esto garantiza que si uno falla, se reinicie solo, sin afectar al otro.
 Esta sección documenta los problemas técnicos encontrados durante la implementación y cómo se resolvieron.
 
 ### 1. Frontend: Error de Importación (LucideIcon)
@@ -112,3 +174,21 @@ Se corrigieron todas las consultas SQL en `dashboardRoutes.js` para apuntar a la
 // Ejemplo de consulta corregida
 const sql = "SELECT COUNT(*) as total FROM registros ...";
 ```
+
+
+### 5. Python: Falta módulo 'dotenv' y Restricciones de PIP
+**Problema**: El worker fallaba con `ModuleNotFoundError` y `pip install` daba error de "externally managed environment".
+**Causa**: Linux bloquea la instalación global de paquetes pip para proteger el sistema.
+**Solución**:
+Se actualizó `start_system.sh` para crear y usar automáticamente un Entorno Virtual (`venv`):
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 7. Frontend: Permiso Denegado (Error 127)
+**Problema**: El servicio falla con `vite: Permission denied`.
+**Causa**: El ejecutable `vite` no tiene permisos de ejecución.
+**Solución**:
+Ejecutar: `chmod +x frontend/node_modules/.bin/vite` y reiniciar el servicio.

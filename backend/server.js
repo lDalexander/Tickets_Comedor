@@ -9,24 +9,29 @@ const path = require('path');
 dotenv.config();
 
 const app = express();
+const server = require('http').createServer(app);
+
 const PORT = process.env.PORT || 5000;
 
 // Ensure logs directory exists
 const logsDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logsDir)){
+if (!fs.existsSync(logsDir)) {
     fs.mkdirSync(logsDir);
 }
 
 const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173'];
 
-app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
+const io = require('socket.io')(server, {
+    cors: {
+        origin: "*", // Allow all origins for local network access
+        methods: ["GET", "POST"]
     }
+});
+
+app.use(cors({
+    origin: "*", // Allow all origins
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
 
@@ -37,16 +42,120 @@ app.use((req, res, next) => {
 
 app.use('/api', dashboardRoutes);
 
+// Database Polling for Real-Time Events
+const db = require('./db');
+
+// --- MEAL SELECTION ROUTES ---
+app.get('/api/users/:id', async (req, res) => {
+    try {
+        const rows = await db.query('SELECT nombre_completo FROM usuarios WHERE zk_id = ?', [req.params.id]);
+        if (rows.length > 0) {
+            res.json({ success: true, name: rows[0].nombre_completo });
+        } else {
+            res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+        }
+    } catch (error) {
+        logger.error('Error fetching user:', error);
+        res.status(500).json({ success: false, error: 'Database error' });
+    }
+});
+
+app.get('/api/menu/:userId', async (req, res) => {
+    try {
+        const rows = await db.query(
+            'SELECT * FROM menu_diario WHERE user_id = ? AND YEARWEEK(fecha, 1) = YEARWEEK(CURDATE(), 1)',
+            [req.params.userId]
+        );
+        res.json(rows);
+    } catch (error) {
+        logger.error('Error fetching menu:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+app.post('/api/menu', async (req, res) => {
+    const { userId, selections } = req.body;
+    if (!userId || !selections) return res.status(400).json({ error: 'Missing data' });
+
+    let connection;
+    try {
+        connection = await db.pool.promise().getConnection();
+        await connection.beginTransaction();
+        for (const item of selections) {
+            const [exists] = await connection.query(
+                'SELECT id FROM menu_diario WHERE user_id = ? AND fecha = ?',
+                [userId, item.date]
+            );
+            if (exists.length > 0) {
+                await connection.query('UPDATE menu_diario SET opcion = ? WHERE id = ?', [item.option, exists[0].id]);
+            } else {
+                if (item.option) {
+                    await connection.query('INSERT INTO menu_diario (user_id, fecha, opcion) VALUES (?, ?, ?)', [userId, item.date, item.option]);
+                }
+            }
+        }
+        await connection.commit();
+        res.json({ success: true });
+    } catch (error) {
+        if (connection) await connection.rollback();
+        logger.error('Error saving menu:', error);
+        res.status(500).json({ error: 'Database error' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+let lastProcessedId = 0;
+
+async function checkNewRecords() {
+    try {
+        if (lastProcessedId === 0) {
+            // First run: get the max ID
+            const rows = await db.query("SELECT MAX(id) as maxId FROM registros");
+            lastProcessedId = rows[0].maxId || 0;
+            return;
+        }
+
+        const newRecords = await db.query(
+            "SELECT * FROM registros WHERE id > ? ORDER BY id ASC",
+            [lastProcessedId]
+        );
+
+        if (newRecords.length > 0) {
+            newRecords.forEach(record => {
+                const isDuplicate = record.descripcion === 'Intento de Duplicado';
+                const status = isDuplicate ? 'error' : 'success';
+                const type = isDuplicate ? 'ALERTA' : 'TICKET';
+
+                io.emit('new_log', {
+                    type: type,
+                    message: `${record.nombre} - ${record.descripcion}`,
+                    status: status
+                });
+                lastProcessedId = record.id;
+            });
+            logger.info(`Emitted ${newRecords.length} new realtime events`);
+        }
+    } catch (error) {
+        logger.error("Error polling for new records", error);
+    }
+}
+
+// Poll every 2 seconds
+setInterval(checkNewRecords, 2000);
+
 // Global Error Handler
 app.use((err, req, res, next) => {
     logger.error('Unhandled Error', err);
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     console.log(`Server running on port ${PORT}`);
 });
+
+// Keep process alive hack
+setInterval(() => { }, 1000);
 
 // Debugging: Log why the process is exiting
 process.on('exit', (code) => {

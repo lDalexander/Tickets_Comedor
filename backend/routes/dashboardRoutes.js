@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const logger = require('../utils/logger');
+const ExcelJS = require('exceljs');
 
 // Helper to build date filter
 const isValidDate = (dateString) => {
@@ -51,9 +52,9 @@ router.get('/stats/summary', async (req, res) => {
             params
         );
 
-        // 3. Duplicates Attempted
-        const dupsRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion = 'Intento de Duplicado'`,
+        // 3. Normal Tickets (Ticket Almuerzo)
+        const normalRows = await db.query(
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion = 'Ticket Almuerzo'`,
             params
         );
 
@@ -66,7 +67,7 @@ router.get('/stats/summary', async (req, res) => {
         res.json({
             totalLunches: lunchesRows[0]?.total || 0,
             totalSpecial: specialRows[0]?.total || 0,
-            duplicatesAttempted: dupsRows[0]?.total || 0,
+            totalNormal: normalRows[0]?.total || 0,
             mostPopularType: popRows[0]?.descripcion || 'N/A'
         });
         logger.info('Fetched summary stats from DB');
@@ -129,12 +130,11 @@ router.get('/stats/history', async (req, res) => {
 
         // Type Filter
         if (type) {
-            if (type === 'duplicate') conditions.push(`descripcion = 'Intento de Duplicado'`);
-            else if (type === 'extra') conditions.push(`descripcion = 'Ticket Extra'`);
+            if (type === 'extra') conditions.push(`descripcion = 'Ticket Extra'`);
             else if (type === 'normal') conditions.push(`descripcion = 'Ticket Almuerzo'`);
         } else {
-            // Default: Show all relevant types
-            conditions.push(`descripcion IN ('Intento de Duplicado', 'Ticket Extra', 'Ticket Almuerzo')`);
+            // Default: Show only successful tickets (Hide duplicates)
+            conditions.push(`descripcion IN ('Ticket Extra', 'Ticket Almuerzo')`);
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -160,6 +160,85 @@ router.get('/stats/history', async (req, res) => {
     } catch (error) {
         logger.error('Error fetching history logs', error);
         res.status(500).json([]);
+    }
+});
+
+
+router.get('/stats/export-excel', async (req, res) => {
+    try {
+        const { startDate, endDate, type } = req.query;
+
+        // Validation: Require Date Range
+        if (!startDate || !endDate) {
+            return res.status(400).send('Se requiere un rango de fechas para descargar el reporte.');
+        }
+
+        let conditions = [];
+        let params = [];
+
+        // Date Filter
+        conditions.push(`fecha BETWEEN ? AND ?`);
+        params.push(startDate, endDate);
+
+        // Type Filter (matches history logic)
+        if (type) {
+            if (type === 'extra') conditions.push(`descripcion = 'Ticket Extra'`);
+            else if (type === 'normal') conditions.push(`descripcion = 'Ticket Almuerzo'`);
+        } else {
+            // Default: Show only successful tickets (Hide duplicates)
+            conditions.push(`descripcion IN ('Ticket Extra', 'Ticket Almuerzo')`);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        // Query without LIMIT for export
+        const sql = `
+            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type 
+            FROM registros 
+            ${whereClause}
+            ORDER BY fecha DESC, hora DESC
+        `;
+
+        const rows = await db.query(sql, params);
+
+        // Generate Workbook
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Reporte Comedor');
+
+        // Columns
+        worksheet.columns = [
+            { header: 'ID', key: 'id', width: 10 },
+            { header: 'Usuario', key: 'user', width: 30 },
+            { header: 'Fecha', key: 'date', width: 15 },
+            { header: 'Hora', key: 'time', width: 15 },
+            { header: 'Tipo', key: 'type', width: 25 },
+            { header: 'Estado', key: 'status', width: 15 },
+        ];
+
+        // Format Rows
+        rows.forEach(row => {
+            const rowData = {
+                ...row,
+                date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : row.date,
+                status: row.type === 'Intento de Duplicado' ? 'Bloqueado' : 'Exitoso'
+            };
+            worksheet.addRow(rowData);
+        });
+
+        // Headers Style
+        worksheet.getRow(1).font = { bold: true };
+
+        // Response
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=' + 'reporte_comedor.xlsx');
+
+        await workbook.xlsx.write(res);
+        res.end();
+        logger.info(`Exported Excel report with ${rows.length} rows`);
+
+    } catch (error) {
+        logger.error('Error exporting excel', error);
+        res.status(500).send('Error generating report');
     }
 });
 

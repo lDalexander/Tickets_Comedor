@@ -15,7 +15,7 @@ const pool = mysql.createPool({
 });
 
 pool.on('error', (err) => {
-    logger.error('Unexpected Database Error (Pool)', err);
+  logger.error('Unexpected Database Error (Pool)', err);
 });
 
 const promisePool = pool.promise();
@@ -30,4 +30,4 @@ async function query(sql, params) {
   }
 }
 
-module.exports = { query };
+module.exports = { query, pool };

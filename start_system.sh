@@ -9,15 +9,16 @@ command_exists () {
 
 echo "--- Starting Comedor System Integration ---"
 
+# 0. Cleanup old processes
+echo "🧹 Cleaning up old processes..."
+pkill -f "node server.js"
+pkill -f "python comedor.py"
+sleep 1
+
 # 1. Check for Environment Variables
 if [ ! -f "backend_comedor/.env" ]; then
     echo "❌ Error: backend_comedor/.env not found!"
     exit 1
-fi
-
-if [ ! -f "backend/.env" ]; then
-    echo "⚠️ Warning: backend/.env not found! Creating symlink or copy if needed."
-    # Optional logic to sync envs
 fi
 
 # 2. Start Node.js Backend
@@ -27,9 +28,9 @@ if [ ! -d "node_modules" ]; then
     echo "📦 Installing Node dependencies..."
     npm install
 fi
-# Start in background using nohup or just &
-# Using npm start if script exists, or node server.js
-nohup npm start > ../backend.log 2>&1 &
+
+# Run node directly to avoid npm PID issues
+nohup node server.js > ../backend.log 2>&1 &
 BACKEND_PID=$!
 echo "✅ Backend started (PID: $BACKEND_PID)"
 cd ..
@@ -37,18 +38,32 @@ cd ..
 # 3. Start Python Worker
 echo "🐍 Starting Python Comedor Worker..."
 cd backend_comedor
-# Verify virtual environment or install deps
-if command_exists pip3; then
-    # echo "📦 Checking Python dependencies (this might take a moment)..."
-    # pip3 install -r requirements.txt > /dev/null 2>&1
-    :
+if [ ! -d "venv" ]; then
+    echo "📦 Creating Python virtual environment..."
+    python3 -m venv venv
 fi
 
-nohup python3 comedor.py > ../comedor_worker.log 2>&1 &
+# Activate venv
+source venv/bin/activate
+
+echo "📦 Checking Python dependencies..."
+# Only run pip if requirements changed or verify simple check?
+# To speed up, we can skip if libs exist, but pip is fast enough.
+pip install -r requirements.txt > /dev/null 2>&1
+
+nohup python comedor.py > ../comedor_worker.log 2>&1 &
 WORKER_PID=$!
 echo "✅ Worker started (PID: $WORKER_PID)"
 cd ..
 
+sleep 2
+# Validate PIDs
+if ! kill -0 $BACKEND_PID 2>/dev/null; then
+    echo "❌ Error: Node.js Backend failed to start. Check backend.log."
+fi
+if ! kill -0 $WORKER_PID 2>/dev/null; then
+    echo "❌ Error: Python Worker failed to start. Check comedor_worker.log."
+fi
 # 4. Start Frontend (Optional, usually for dev)
 # echo "🎨 Starting Frontend..."
 # cd frontend
@@ -56,7 +71,15 @@ cd ..
 # FRONTEND_PID=$!
 # cd ..
 
-echo "--- System Started Successfully ---"
+sleep 2
+if ! ps -p $BACKEND_PID > /dev/null; then
+    echo "❌ Error: Node.js Backend failed to start. Check backend.log."
+fi
+if ! ps -p $WORKER_PID > /dev/null; then
+    echo "❌ Error: Python Worker failed to start. Check comedor_worker.log."
+fi
+
+echo "--- System Status Checked ---"
 echo "pids: Backend=$BACKEND_PID, Worker=$WORKER_PID"
 echo "Logs are being written to backend.log and comedor_worker.log"
 echo "To stop: kill $BACKEND_PID $WORKER_PID"

@@ -52,6 +52,7 @@ const commonOptions = {
             ticks: { color: '#94a3b8' }
         },
         y: {
+            beginAtZero: true,
             grid: { color: 'rgba(255,255,255,0.05)' },
             ticks: { color: '#94a3b8' }
         }
@@ -68,15 +69,7 @@ export const DailyTrendChart = ({ data }) => {
                 data: data.map(d => d.lunches),
                 borderColor: '#38bdf8',
                 backgroundColor: 'rgba(56, 189, 248, 0.2)',
-                tension: 0.4,
-                fill: true
-            },
-            {
-                label: 'Tickets Impresos',
-                data: data.map(d => d.tickets),
-                borderColor: '#818cf8',
-                backgroundColor: 'rgba(129, 140, 248, 0.2)',
-                tension: 0.4,
+                tension: 0.2,
                 fill: true
             }
         ]
@@ -87,7 +80,7 @@ export const DailyTrendChart = ({ data }) => {
 export const LunchTypeChart = ({ data }) => {
     // Expects data to be { type_normal: 100, type_special: 20 } aggregated
     const chartData = {
-        labels: ['Normal', 'Especial'],
+        labels: ['Almuerzo Normal', 'Almuerzo Dieta'],
         datasets: [
             {
                 data: [data.type_normal, data.type_special],

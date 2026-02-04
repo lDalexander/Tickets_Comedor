@@ -12,8 +12,10 @@
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "mysql2": "^3.16.2",
+    "socket.io": "^4.8.3",
     "winston": "^3.19.0"
   }
 }
