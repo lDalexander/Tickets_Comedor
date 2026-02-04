@@ -7,10 +7,27 @@ import threading
 import os
 import sys
 
+import platform
+
 # --- CONFIGURACIÓN ---
 NOMBRE_APP = "SISTEMA COMEDOR - DETCUADOR"
 SCRIPT_COMEDOR = "comedor.py"
-RUTA_BAT = "run_comedor.bat" # Usaremos tu .bat para aprovechar el bucle de reinicio
+
+if platform.system() == "Windows":
+    RUTA_BAT = "run_comedor.bat"
+    CMD_INIT = f'start cmd /k "{RUTA_BAT}"'
+    MATAR_CMD = 'taskkill /FI "WINDOWTITLE eq SISTEMA COMEDOR - DETCUADOR" /F'
+else:
+    # Linux/Mac
+    RUTA_BAT = "./run_comedor.sh" # We will create this or use python directly
+    # Using python directly for Linux in a simple way or relying on a script
+    # For now let's assume we want to run the python worker.
+    # But start_system.sh does it all. 
+    # Let's make this run comedor.py directly in a new terminal if possible, or just background.
+    # Simpler: Just run the python script.
+    CMD_INIT = f"python3 {SCRIPT_COMEDOR} &" 
+    MATAR_CMD = "pkill -f comedor.py" 
+
 HOST_MYSQL = "localhost"
 PUERTO_MYSQL = 3306
 
@@ -95,14 +112,12 @@ class PanelControlApp:
             messagebox.showerror("Error", "No se detecta MySQL. Por favor inicia XAMPP primero.")
             return
 
-        # Lanzamos el .bat en una ventana aparte para ver los logs
         try:
-            # start cmd /k "archivo.bat" abre una ventana nueva y la mantiene
-            # Usamos Popen para no bloquear el panel de control
-            self.proceso_comedor = subprocess.Popen(
-                f'start cmd /k "{RUTA_BAT}"', 
-                shell=True
-            )
+            if platform.system() == "Windows":
+                self.proceso_comedor = subprocess.Popen(CMD_INIT, shell=True)
+            else:
+                # Linux: Run in background
+                self.proceso_comedor = subprocess.Popen(CMD_INIT, shell=True)
             
             self.lbl_estado.config(text="🟢 SISTEMA CORRIENDO", fg="#00ff00")
             self.btn_iniciar.config(state="disabled", bg="#555")
@@ -112,13 +127,9 @@ class PanelControlApp:
             messagebox.showerror("Error", f"No se pudo iniciar: {e}")
 
     def detener_sistema(self):
-        # Matar el proceso es complejo desde Python a una ventana CMD externa de forma limpia.
-        # La forma más efectiva en Windows es matar por nombre de ventana o pedir al usuario.
-        
-        respuesta = messagebox.askyesno("Detener", "Esto cerrará la ventana del sistema. ¿Confirmar?")
+        respuesta = messagebox.askyesno("Detener", "Esto detendrá el proceso. ¿Confirmar?")
         if respuesta:
-            # Comando forzado de Windows para matar la ventana con el título específico
-            os.system('taskkill /FI "WINDOWTITLE eq SISTEMA COMEDOR - DETCUADOR" /F')
+            os.system(MATAR_CMD)
             
             self.proceso_comedor = None
             self.lbl_estado.config(text="SISTEMA DETENIDO", fg="#ff5555")

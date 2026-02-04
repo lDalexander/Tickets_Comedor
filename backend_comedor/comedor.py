@@ -11,6 +11,11 @@ from datetime import datetime
 from zk import ZK, const
 import mysql.connector
 from escpos.printer import Network
+import os
+from dotenv import load_dotenv
+
+# Cargar variables de entorno
+load_dotenv()
 
 # ==========================================
 #   CONFIGURACIÓN GLOBAL Y LOGS
@@ -23,27 +28,27 @@ logging.basicConfig(
 )
 
 # --- CONFIGURACIÓN DE DISPOSITIVOS ---
-IP_BIOMETRICO = '150.36.200.12'
-IP_IMPRESORA  = '150.36.200.9'
-PUERTO_ZK     = 4370
+IP_BIOMETRICO = os.getenv('IP_BIOMETRICO', '150.36.200.12')
+IP_IMPRESORA  = os.getenv('IP_IMPRESORA', '150.36.200.9')
+PUERTO_ZK     = int(os.getenv('PUERTO_ZK', 4370))
 ARCHIVO_LOGO  = "logo_grande.png" 
 
 # --- CONFIGURACIÓN DE CORREO (SMTP) ---
-SMTP_SERVER   = 'smtp-mail.outlook.com'
-SMTP_PORT     = 587
-SMTP_USER     = 'no-reply@detcuador.com'
-SMTP_PASS     = 'D3tcuador2025@'
-EMAIL_DESTINO = 'agarcia@detcuador.com'
+SMTP_SERVER   = os.getenv('SMTP_SERVER', 'smtp-mail.outlook.com')
+SMTP_PORT     = int(os.getenv('SMTP_PORT', 587))
+SMTP_USER     = os.getenv('SMTP_USER', 'no-reply@detcuador.com')
+SMTP_PASS     = os.getenv('SMTP_PASS')
+EMAIL_DESTINO = os.getenv('EMAIL_DESTINO', 'agarcia@detcuador.com')
 
 IDS_VIPS = ['14', '27', '33'] 
 IDS_CON_DIETA = ['110','12','136','91','83','2','112','72','96','11','38','79','81','48','7','140','111','80','143','71','64','66','67','73','13','52']
 
 DB_CONFIG = {
-    'user': 'root',
-    'password': '',
-    'host': 'localhost',
-    'database': 'control_comedor',
-    'port': 3306
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', ''),
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'database': os.getenv('DB_NAME', 'control_comedor'),
+    'port': int(os.getenv('DB_PORT', 3306))
 }
 
 memoria_papel = {} 

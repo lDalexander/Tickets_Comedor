@@ -4,12 +4,26 @@ const db = require('../db');
 const logger = require('../utils/logger');
 
 // Helper to build date filter
+const isValidDate = (dateString) => {
+    const regEx = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateString.match(regEx)) return false;  // Invalid format
+    const d = new Date(dateString);
+    const dNum = d.getTime();
+    if (!dNum && dNum !== 0) return false; // NaN value, invalid date
+    return d.toISOString().slice(0, 10) === dateString;
+}
+
 const getDateFilter = (req, fieldName = 'fecha') => {
     const { startDate, endDate } = req.query;
     let sql = ` ${fieldName} = CURDATE() `; // Default: Today
     let params = [];
 
     if (startDate && endDate) {
+        if (!isValidDate(startDate) || !isValidDate(endDate)) {
+            // Fallback or error. For now fallback to today to avoid SQL error or injection attempts via weird formats
+            logger.warn('Invalid date format detected, falling back to CURDATE');
+            return { sql: ` ${fieldName} = CURDATE() `, params: [] };
+        }
         sql = ` ${fieldName} BETWEEN ? AND ? `;
         params = [startDate, endDate];
     } else if (req.path.includes('/daily')) {
@@ -17,7 +31,7 @@ const getDateFilter = (req, fieldName = 'fecha') => {
         sql = ` ${fieldName} >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) `;
         params = [];
     }
-    
+
     return { sql, params };
 };
 
@@ -30,7 +44,7 @@ router.get('/stats/summary', async (req, res) => {
             `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra')`,
             params
         );
-        
+
         // 2. Special Tickets (replacing Printed Tickets redundancy)
         const specialRows = await db.query(
             `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion = 'Ticket Extra'`,
@@ -85,7 +99,7 @@ router.get('/stats/daily', async (req, res) => {
             ORDER BY date ASC
         `;
         const rows = await db.query(sql, params);
-        
+
         const formattedRows = rows.map(r => ({
             ...r,
             date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date
@@ -124,7 +138,7 @@ router.get('/stats/history', async (req, res) => {
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-        
+
         const sql = `
             SELECT id, nombre as user, hora as time, fecha as date, descripcion as type 
             FROM registros 
@@ -132,9 +146,9 @@ router.get('/stats/history', async (req, res) => {
             ORDER BY fecha DESC, hora DESC 
             LIMIT 100
         `;
-        
+
         const rows = await db.query(sql, params);
-        
+
         const formattedRows = rows.map(r => ({
             ...r,
             date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date,

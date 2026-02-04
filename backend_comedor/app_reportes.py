@@ -21,13 +21,18 @@ st.set_page_config(
     layout="centered"
 )
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # --- CONFIGURACIÓN BASE DE DATOS ---
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': '', 
-    'database': 'control_comedor',
-    'port': 3306,
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', ''), 
+    'database': os.getenv('DB_NAME', 'control_comedor'),
+    'port': int(os.getenv('DB_PORT', 3306)),
     'connect_timeout': 10
 }
 
