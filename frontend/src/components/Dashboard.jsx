@@ -99,7 +99,7 @@ const Dashboard = () => {
             return timeStr;
         }
     };
-    
+
     if (loading && !summary) return <div className="page-header" style={{ textAlign: 'center' }}>Cargando datos...</div>;
 
     // Aggregate daily data for today for doughnut chart if not provided by summary
@@ -137,7 +137,25 @@ const Dashboard = () => {
                             style={{ background: 'transparent', border: 'none', color: '#f1f5f9', fontSize: '0.875rem', colorScheme: 'dark' }}
                         />
 
+
                         <div style={{ width: '1px', height: '20px', background: 'var(--glass-border)', margin: '0 0.5rem' }}></div>
+
+                        <a href="/seleccion" target="_blank" style={{ textDecoration: 'none' }}>
+                            <button style={{
+                                background: '#8b5cf6',
+                                border: 'none',
+                                borderRadius: '4px',
+                                color: 'white',
+                                padding: '0.25rem 0.75rem',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}>
+                                <Utensils size={14} /> Menú Semanal
+                            </button>
+                        </a>
 
                         <select
                             value={typeFilter}
@@ -213,7 +231,7 @@ const Dashboard = () => {
                     value={(() => {
                         const type = summary?.mostPopularType?.toLowerCase() || '';
                         if (type.includes('almuerzo')) return 'ALMUERZO NORMAL';
-                        if (type.includes('extra') || type.includes('especial')) return 'ALMUERZO DIETA';
+                        if (type.includes('extra') || type.includes('especial') || type.includes('dieta')) return 'ALMUERZO DIETA';
                         return type.toUpperCase() || 'N/A';
                     })()}
                     icon={Users}

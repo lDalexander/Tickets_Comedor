@@ -42,13 +42,13 @@ router.get('/stats/summary', async (req, res) => {
 
         // 1. Total Lunches
         const lunchesRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra')`,
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta')`,
             params
         );
 
-        // 2. Special Tickets (replacing Printed Tickets redundancy)
+        // 2. Special Tickets (Dieta)
         const specialRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion = 'Ticket Extra'`,
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Extra', 'Ticket Dieta')`,
             params
         );
 

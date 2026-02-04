@@ -203,12 +203,27 @@ def registrar_evento(user_id, nombre):
         ahora = datetime.now()
         fecha_hoy = ahora.date()
 
-        query = "SELECT COUNT(*) FROM registros WHERE user_id = %s AND fecha = %s AND (descripcion = 'TICKET ALMUERZO' OR descripcion = 'TICKET EXTRA')"
+        # Verificar selección de menú (Web)
+        query_menu = "SELECT opcion FROM menu_diario WHERE user_id = %s AND fecha = %s"
+        cursor.execute(query_menu, (user_id, fecha_hoy))
+        menu_res = cursor.fetchone()
+        
+        es_dieta_seleccion = False
+        if menu_res and menu_res[0] == 2:
+            es_dieta_seleccion = True
+        elif not menu_res and str(user_id) in IDS_CON_DIETA:
+            # Mantener compatibilidad con lista fija si no hay selección web
+            es_dieta_seleccion = True
+
+        query = "SELECT COUNT(*) FROM registros WHERE user_id = %s AND fecha = %s AND (descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA'))"
         cursor.execute(query, (user_id, fecha_hoy))
         (conteo,) = cursor.fetchone()
 
         if conteo == 0:
-            tipo_evento = "TICKET ALMUERZO"
+            if es_dieta_seleccion:
+                tipo_evento = "TICKET DIETA"
+            else:
+                tipo_evento = "TICKET ALMUERZO"
         else:
             if es_vip:
                 tipo_evento = "TICKET EXTRA"
@@ -500,6 +515,9 @@ def main():
                     logging.error(err)
                 else:
                     if resultado == "TICKET ALMUERZO":
+                        imprimir_ticket_valido(nombre_completo, event.user_id)
+                    elif resultado == "TICKET DIETA":
+                         # Uses same printing logic because it checks DB for 'es_dieta' flag
                         imprimir_ticket_valido(nombre_completo, event.user_id)
                     elif resultado == "TICKET EXTRA":
                         imprimir_ticket_extra(nombre_completo)
