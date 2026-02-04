@@ -3,20 +3,50 @@ import { User, Calendar, Save, Check, X, Utensils, Salad } from 'lucide-react';
 import axios from 'axios';
 
 // Logic to get current week's dates (Mon-Fri)
+// Helper to get consistent Ecuador time (UTC-5)
+const getEcuadorTime = () => {
+    // Format: YYYY-MM-DD HH:MM:SS
+    const fmt = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'America/Guayaquil',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hourCycle: 'h23'
+    });
+    const parts = fmt.formatToParts(new Date());
+    const getPart = (type) => parts.find(p => p.type === type).value;
+
+    const dateStr = `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
+    const hour = parseInt(getPart('hour'), 10);
+
+    // Create Date object for week calc (at midnight)
+    const dateObj = new Date(`${dateStr}T00:00:00`);
+
+    return { dateStr, hour, dateObj };
+};
+
+// Logic to get current week's dates (Mon-Fri) based on Ecuador Time
 const getWeekDates = () => {
-    const curr = new Date();
+    const { dateObj } = getEcuadorTime();
+    const curr = new Date(dateObj); // Clone
     const week = [];
     // Adjust to Monday
-    // Day 1 = Mon, 0 = Sun
-    const day = curr.getDay();
+    const day = curr.getDay(); // 0-6
     const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
 
     for (let i = 0; i < 5; i++) {
-        const first = new Date(curr.setDate(diff + i));
+        const d = new Date(curr);
+        d.setDate(diff + i);
+        // Use local formatting since 'd' is already aligned to Ecuador day boundaries conceptually
+        // Actually, we need to format 'd' as YYYY-MM-DD
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dayNum = String(d.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${dayNum}`;
+
         week.push({
-            date: first.toISOString().slice(0, 10),
-            dayName: new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(first),
-            displayDate: new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long' }).format(first)
+            date: dateStr,
+            dayName: new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(d),
+            displayDate: new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long' }).format(d)
         });
     }
     return week;
@@ -28,7 +58,9 @@ const MenuSelection = () => {
     const [loading, setLoading] = useState(false);
     const [dates, setDates] = useState([]);
     // selections: { '2023-10-27': 1 (Normal) | 2 (Diet) | null (No lunch) }
+    // selections: { '2023-10-27': 1 (Normal) | 2 (Diet) | null (No lunch) }
     const [selections, setSelections] = useState({});
+    const [savedSelections, setSavedSelections] = useState({}); // Track what is actually in DB
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
 
@@ -63,6 +95,7 @@ const MenuSelection = () => {
                 map[d] = item.opcion;
             });
             setSelections(map);
+            setSavedSelections(map); // Sync saved state
         } catch (error) {
             console.error(error);
         }
@@ -95,6 +128,7 @@ const MenuSelection = () => {
             };
             await axios.post('/api/menu', payload);
             setMessage({ type: 'success', text: 'Selección guardada correctamente' });
+            setSavedSelections({ ...selections }); // Mark current as saved
             setTimeout(() => setMessage(null), 3000);
         } catch (error) {
             setMessage({ type: 'error', text: 'Error al guardar selección' });
@@ -180,14 +214,37 @@ const MenuSelection = () => {
                             const selected = !!selections[d.date];
                             const option = selections[d.date]; // 1 = Normal, 2 = Diet
 
+                            // New Logic: 2 PM Cutoff
+                            const now = new Date();
+                            const todayStr = now.toLocaleDateString('sv-SE');
+                            const currentHour = now.getHours();
+
+                            const isPast = d.date < todayStr;
+                            const isToday = d.date === todayStr;
+                            const isLate = isToday && currentHour >= 14; // 14:00 = 2 PM
+
+                            // Locked if: Past OR (Today & Late) OR (Today & Already Saved)
+                            // User wants it to lock immediately upon saving ("que ya se quede eso")
+                            const isSavedToday = !!savedSelections[todayStr];
+                            const isLocked = isPast || isLate || (isToday && isSavedToday);
+
                             return (
                                 <div key={d.date} className="card" style={{
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
                                     border: selected ? '1px solid #3b82f6' : '1px solid transparent',
-                                    background: selected ? 'rgba(59, 130, 246, 0.05)' : '#1e293b'
+                                    background: isLocked ? 'rgba(30, 41, 59, 0.5)' : (selected ? 'rgba(59, 130, 246, 0.05)' : '#1e293b'),
+                                    opacity: isLocked ? 0.6 : 1,
+                                    pointerEvents: isLocked ? 'none' : 'auto',
+                                    position: 'relative'
                                 }}>
+                                    {isLocked && (
+                                        <div style={{ position: 'absolute', right: '10px', top: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{isPast ? 'Cerrado' : (isLate ? 'Hora límite excedida' : 'Confirmado')}</span>
+                                            <span style={{ fontSize: '1rem' }}>🔒</span>
+                                        </div>
+                                    )}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                                         <div
                                             onClick={() => toggleDay(d.date)}
@@ -200,7 +257,7 @@ const MenuSelection = () => {
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                cursor: 'pointer'
+                                                cursor: isLocked ? 'not-allowed' : 'pointer'
                                             }}
                                         >
                                             {selected && <Check size={16} color="white" />}
@@ -277,11 +334,19 @@ const MenuSelection = () => {
                         >
                             <Save size={20} /> {saving ? 'Guardando...' : 'Guardar Cambios'}
                         </button>
+
+                    </div>
+                    <div className="page-header" style={{ marginTop: '2rem', textAlign: 'center', borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
+                        <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
+                            John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 2.9
+                        </p>
                     </div>
                 </div>
-            )}
-        </div>
+            )
+            }
+        </div >
     );
 };
+
 
 export default MenuSelection;

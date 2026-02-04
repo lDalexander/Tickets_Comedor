@@ -40,6 +40,7 @@ app.use((req, res, next) => {
     next();
 });
 
+app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api', dashboardRoutes);
 
 // Database Polling for Real-Time Events
