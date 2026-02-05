@@ -61,6 +61,27 @@ app.get('/api/users/:id', async (req, res) => {
     }
 });
 
+app.get('/api/users/search/query', async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) return res.json([]);
+
+        // Search by ID or Name
+        const query = `
+            SELECT zk_id, nombre_completo 
+            FROM usuarios 
+            WHERE nombre_completo LIKE ? OR zk_id LIKE ? 
+            LIMIT 10
+        `;
+        const wild = `%${q}%`;
+        const rows = await db.query(query, [wild, wild]);
+        res.json(rows);
+    } catch (error) {
+        logger.error('Error searching users:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
 app.get('/api/menu/:userId', async (req, res) => {
     try {
         const rows = await db.query(

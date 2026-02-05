@@ -223,10 +223,10 @@ const MenuSelection = () => {
                             const isToday = d.date === todayStr;
                             const isLate = isToday && currentHour >= 14; // 14:00 = 2 PM
 
-                            // Locked if: Past OR (Today & Late) OR (Today & Already Saved)
-                            // User wants it to lock immediately upon saving ("que ya se quede eso")
-                            const isSavedToday = !!savedSelections[todayStr];
-                            const isLocked = isPast || isLate || (isToday && isSavedToday);
+                            // Locked if: Past OR (Today & Late) OR (ANY Saved Selection)
+                            // User wants strictest lock: Once saved/confirmed, it cannot be changed.
+                            const isSaved = !!savedSelections[d.date];
+                            const isLocked = isPast || isLate || isSaved;
 
                             return (
                                 <div key={d.date} className="card" style={{
