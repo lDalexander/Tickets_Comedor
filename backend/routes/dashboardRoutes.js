@@ -80,7 +80,7 @@ router.get('/stats/summary', async (req, res) => {
 router.get('/stats/daily', async (req, res) => {
     try {
         const { startDate, endDate } = req.query;
-        let dateCondition = `fecha >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`;
+        let dateCondition = `fecha >= DATE_SUB(CURDATE(), INTERVAL 8 DAY)`;
         let params = [];
 
         if (startDate && endDate) {
@@ -91,9 +91,9 @@ router.get('/stats/daily', async (req, res) => {
         const sql = `
             SELECT 
                 DATE(fecha) as date,
-                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'Ticket Extra') THEN 1 ELSE 0 END) as lunches,
+                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta') THEN 1 ELSE 0 END) as lunches,
                 SUM(CASE WHEN descripcion = 'Ticket Almuerzo' THEN 1 ELSE 0 END) as type_normal,
-                SUM(CASE WHEN descripcion = 'Ticket Extra' THEN 1 ELSE 0 END) as type_special
+                SUM(CASE WHEN descripcion IN ('Ticket Extra', 'Ticket Dieta') THEN 1 ELSE 0 END) as type_special
             FROM registros 
             WHERE ${dateCondition}
             GROUP BY DATE(fecha)

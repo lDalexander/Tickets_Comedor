@@ -41,7 +41,8 @@ SMTP_PASS     = os.getenv('SMTP_PASS')
 EMAIL_DESTINO = os.getenv('EMAIL_DESTINO', 'agarcia@detcuador.com')
 
 IDS_VIPS = ['14', '27', '33'] 
-IDS_CON_DIETA = ['110','90','12','136','91','83','2','112','72','96','11','38','79','81','48','7','140','111','80','143','71','64','66','67','73','13','52','91','92','81','98','97']
+IDS_CON_DIETA = ['110','90','12','91','83','2','112','72','96','11','38','79','81','48','7','140','111','80','143','71','64','66','67','73','13','52','91','92','81','98','97']
+IDS_CON_ESPECIAL = ['16', '119'] # Lista para TIPO: GERENCIA
 
 DB_CONFIG = {
     'user': os.getenv('DB_USER', 'root'),
@@ -154,11 +155,64 @@ def verificar_estado_impresora():
 def tarea_monitoreo_periodico():
     print("⏰ Hilo de monitoreo periódico INICIADO (Cada 12h)")
     logging.info("Hilo de monitoreo iniciado.")
+    # Ejecutar primera vez inmediatamente
+    verificar_estado_impresora()
+    sincronizar_usuarios_faltantes()
+    
     while True:
         time.sleep(43200) 
         timestamp = datetime.now().strftime('%d/%m %H:%M')
         print(f"\n[{timestamp}] ⏰ Revisión programada de 12h...")
         verificar_estado_impresora()
+        sincronizar_usuarios_faltantes()
+
+def sincronizar_usuarios_faltantes():
+    print("🔍 Buscando usuarios faltantes en registros...")
+    conn = None
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        
+        # Buscar IDs en registros que NO están en usuarios
+        sql_missing = """
+            SELECT DISTINCT r.user_id, 
+                   (SELECT nombre FROM registros r2 WHERE r2.user_id = r.user_id ORDER BY id DESC LIMIT 1) as ultimo_nombre
+            FROM registros r
+            WHERE r.user_id NOT IN (SELECT zk_id FROM usuarios)
+        """
+        cursor.execute(sql_missing)
+        faltantes = cursor.fetchall()
+        
+        if not faltantes:
+            print("✅ No se encontraron usuarios faltantes.")
+            return
+
+        print(f"⚠️ Se encontraron {len(faltantes)} usuarios sin registrar en usuarios. Restaurando...")
+        logging.info(f"Restaurando {len(faltantes)} usuarios desde registros.")
+
+        count = 0
+        for uid, nombre in faltantes:
+            try:
+                # Insertar en usuarios
+                if not nombre: nombre = f"Restaurado_{uid}"
+                sql_ins = "INSERT INTO usuarios (zk_id, nombre_completo) VALUES (%s, %s)"
+                cursor.execute(sql_ins, (str(uid), nombre))
+                count += 1
+                print(f"   + Restaurado: ID {uid} - {nombre}")
+            except Exception as e:
+                print(f"   x Error restaurando ID {uid}: {e}")
+
+        conn.commit()
+        print(f"✅ Restauración completada. {count} usuarios agregados.")
+        logging.info(f"Restauración completada: {count} usuarios.")
+
+    except Exception as e:
+        logging.error(f"Error en sincronizar_usuarios_faltantes: {e}")
+        print(f"❌ Error sync faltantes: {e}")
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
 
 # ==========================================
 #   FUNCIONES BD / IMPRESION
@@ -215,12 +269,16 @@ def registrar_evento(user_id, nombre):
             # Mantener compatibilidad con lista fija si no hay selección web
             es_dieta_seleccion = True
 
-        query = "SELECT COUNT(*) FROM registros WHERE user_id = %s AND fecha = %s AND (descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA'))"
+        es_especial = str(user_id) in IDS_CON_ESPECIAL
+
+        query = "SELECT COUNT(*) FROM registros WHERE user_id = %s AND fecha = %s AND (descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA'))"
         cursor.execute(query, (user_id, fecha_hoy))
         (conteo,) = cursor.fetchone()
 
         if conteo == 0:
-            if es_dieta_seleccion:
+            if es_especial:
+                tipo_evento = "TICKET GERENCIA"
+            elif es_dieta_seleccion:
                 tipo_evento = "TICKET DIETA"
             else:
                 tipo_evento = "TICKET ALMUERZO"
@@ -286,6 +344,7 @@ def imprimir_ticket_valido(nombre, user_id):
     
     # Valores por defecto
     es_dieta = False 
+    es_especial = False
     sin_sopa = False
     sin_arroz = False
 
@@ -311,6 +370,8 @@ def imprimir_ticket_valido(nombre, user_id):
                 # Si no hay web, revisamos lista fija
                 if str(user_id) in IDS_CON_DIETA:
                     es_dieta = True
+                if str(user_id) in IDS_CON_ESPECIAL:
+                    es_especial = True
             
         except Exception as e:
             print(f"⚠️ Error SQL: {e}") 
@@ -345,7 +406,11 @@ def imprimir_ticket_valido(nombre, user_id):
         p.text("\n")
         
         # === TIPO DE MENÚ ===
-        if es_dieta:
+        # === TIPO DE MENÚ ===
+        if es_especial:
+            p.set(align='center', bold=True, invert=True) 
+            p.text("  >>> TIPO: GERENCIA <<<  \n")
+        elif es_dieta:
             p.set(align='center', bold=True, invert=True) 
             p.text("  >>> MENU: DIETA <<<  \n")
         else:
@@ -518,6 +583,8 @@ def main():
                         imprimir_ticket_valido(nombre_completo, event.user_id)
                     elif resultado == "TICKET DIETA":
                          # Uses same printing logic because it checks DB for 'es_dieta' flag
+                        imprimir_ticket_valido(nombre_completo, event.user_id)
+                    elif resultado == "TICKET GERENCIA":
                         imprimir_ticket_valido(nombre_completo, event.user_id)
                     elif resultado == "TICKET EXTRA":
                         imprimir_ticket_extra(nombre_completo)

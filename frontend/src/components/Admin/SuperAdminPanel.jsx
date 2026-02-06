@@ -48,8 +48,8 @@ const SuperAdminPanel = () => {
 
     return (
         <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' }}>
-                <h1 style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: '#ef4444' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <h1 style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: '#ef4444', margin: 0 }}>
                     <Terminal size={32} /> SUPER ADMIN CONSOLE
                 </h1>
                 <button onClick={() => setAuth(false)} style={{ background: 'transparent', border: '1px solid #475569', color: '#94a3b8', padding: '0.5rem 1rem' }}>Logout</button>
@@ -94,10 +94,10 @@ const SuperAdminPanel = () => {
             )}
 
             {results && (
-                <div style={{ overflowX: 'auto', background: '#1e293b', padding: '1rem', borderRadius: '8px' }}>
+                <div className="responsive-table" style={{ background: '#1e293b', padding: '1rem' }}>
                     {Array.isArray(results) ? (
                         results.length > 0 ? (
-                            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#cbd5e1' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#cbd5e1', minWidth: '600px' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid #334155', textAlign: 'left' }}>
                                         {Object.keys(results[0]).map(key => (

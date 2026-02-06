@@ -62,7 +62,7 @@ router.get('/schema/:table', checkAuth('admin'), async (req, res) => {
 router.get('/data/:table', checkAuth('admin'), async (req, res) => {
     try {
         const { table } = req.params;
-        const limit = 100; // Hard limit for safety
+        const limit = 2000; // Increased limit to ensure client-side search works for now
         const [rows] = await pool.query(`SELECT * FROM ?? ORDER BY 1 DESC LIMIT ${limit}`, [table]);
         res.json(rows);
     } catch (error) {
@@ -82,10 +82,7 @@ router.put('/data/:table/:pk/:val', checkAuth('admin'), async (req, res) => {
         const setClause = Object.keys(updates).map(k => `${k} = ?`).join(', ');
         const values = Object.values(updates);
 
-        // Add PK to values
-        values.push(val);
-
-        await pool.query(`UPDATE ?? SET ${setClause} WHERE ?? = ?`, [table, ...values, pk]);
+        await pool.query(`UPDATE ?? SET ${setClause} WHERE ?? = ?`, [table, ...values, pk, val]);
         res.json({ success: true });
     } catch (error) {
         logger.error('Admin: Update Error', error);

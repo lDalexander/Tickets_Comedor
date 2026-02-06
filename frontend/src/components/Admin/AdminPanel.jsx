@@ -90,11 +90,31 @@ const AdminPanel = () => {
     };
 
     const handleSave = async () => {
+        // Sanitize Payload for MySQL compatibility
+        const payload = { ...formData };
+        schema.forEach(col => {
+            const val = payload[col.Field];
+            if (!val) return;
+
+            // Handle DATE types (only YYYY-MM-DD)
+            if (col.Type === 'date') {
+                if (typeof val === 'string' && val.length > 10) {
+                    payload[col.Field] = val.substring(0, 10);
+                }
+            }
+            // Handle DATETIME types (YYYY-MM-DD HH:MM:SS)
+            if (col.Type === 'datetime' || col.Type === 'timestamp') {
+                if (typeof val === 'string' && val.includes('T')) {
+                    payload[col.Field] = val.replace('T', ' ').substring(0, 19);
+                }
+            }
+        });
+
         try {
             if (isNew) {
-                await axios.post(`/api/admin/data/${currentTable}`, formData, { headers: { 'x-admin-secret': 'admin123' } });
+                await axios.post(`/api/admin/data/${currentTable}`, payload, { headers: { 'x-admin-secret': 'admin123' } });
             } else {
-                await axios.put(`/api/admin/data/${currentTable}/${pk}/${formData[pk]}`, formData, { headers: { 'x-admin-secret': 'admin123' } });
+                await axios.put(`/api/admin/data/${currentTable}/${pk}/${payload[pk]}`, payload, { headers: { 'x-admin-secret': 'admin123' } });
             }
             setEditingRow(null);
             setIsNew(false);
@@ -114,6 +134,10 @@ const AdminPanel = () => {
         }
     };
 
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    // ... (keep logic same)
+
     if (!auth) {
         return (
             <div style={{ padding: '4rem', textAlign: 'center' }}>
@@ -128,16 +152,38 @@ const AdminPanel = () => {
     }
 
     return (
-        <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+        <div className="admin-container">
+            {/* Mobile Header (Only visible on mobile via CSS) */}
+            <div className="admin-mobile-header" style={{ display: 'none' }}>
+                <h2 style={{ color: '#38bdf8', margin: 0, fontSize: '1.2rem' }}>Admin Panel</h2>
+                <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: 'transparent', border: 'none', color: 'white' }}>
+                    {menuOpen ? <X size={24} /> : <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ width: 24, height: 2, background: 'white' }}></div>
+                        <div style={{ width: 24, height: 2, background: 'white' }}></div>
+                        <div style={{ width: 24, height: 2, background: 'white' }}></div>
+                    </div>}
+                </button>
+            </div>
+
+            {/* Mobile Overlay */}
+            {menuOpen && <div className="sidebar-overlay" onClick={() => setMenuOpen(false)}></div>}
+
             {/* Sidebar */}
-            <div style={{ width: '250px', background: '#0f172a', padding: '1rem', borderRight: '1px solid #334155' }}>
-                <h2 style={{ color: '#38bdf8', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Database size={20} /> Tablas
-                </h2>
+            <div className={`admin-sidebar ${menuOpen ? 'open' : ''}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                    <h2 style={{ color: '#38bdf8', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Database size={20} /> Tablas
+                    </h2>
+                    {/* Close button for mobile inside sidebar */}
+                    <button className="mobile-only" onClick={() => setMenuOpen(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', display: 'none' }}>
+                        <X size={20} />
+                    </button>
+                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     {tables.map(t => (
                         <button key={t}
-                            onClick={() => selectTable(t)}
+                            onClick={() => { selectTable(t); setMenuOpen(false); }}
                             style={{
                                 padding: '0.75rem', textAlign: 'left',
                                 background: currentTable === t ? '#1e293b' : 'transparent',
@@ -148,20 +194,23 @@ const AdminPanel = () => {
                         </button>
                     ))}
                 </div>
+                <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid #334155' }}>
+                    <button onClick={() => setAuth(false)} style={{ width: '100%', padding: '0.5rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Salir</button>
+                </div>
             </div>
 
             {/* Main Content */}
-            <div style={{ flex: 1, padding: '2rem', overflowY: 'auto', position: 'relative' }}>
+            <div className="admin-content">
                 {!currentTable ? (
                     <div style={{ color: '#94a3b8', textAlign: 'center', marginTop: '4rem' }}>Select a table to manage</div>
                 ) : (
                     <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                <h1 style={{ textTransform: 'capitalize' }}>{currentTable}</h1>
+                        <div className="admin-header-actions">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                <h1 style={{ textTransform: 'capitalize', margin: 0 }}>{currentTable}</h1>
 
                                 {/* Search Bar */}
-                                <div style={{ position: 'relative' }}>
+                                <div className="search-container" style={{ position: 'relative' }}>
                                     <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                                     <input
                                         type="text"
@@ -188,8 +237,8 @@ const AdminPanel = () => {
                             </button>
                         </div>
 
-                        <div style={{ overflowX: 'auto', background: '#1e293b', borderRadius: '8px' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#cbd5e1' }}>
+                        <div className="responsive-table">
+                            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#cbd5e1', minWidth: '600px' }}>
                                 <thead>
                                     <tr style={{ background: '#0f172a' }}>
                                         {schema.map(col => <th key={col.Field} style={{ padding: '0.75rem', textAlign: 'left' }}>{col.Field}</th>)}
@@ -214,8 +263,8 @@ const AdminPanel = () => {
 
                 {/* Edit Modal (Overlay) */}
                 {(editingRow) && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div style={{ background: '#1e293b', padding: '2rem', borderRadius: '8px', width: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+                    <div className="modal-overlay">
+                        <div className="modal-content">
                             <h2 style={{ marginBottom: '1rem' }}>{isNew ? 'New Record' : 'Edit Record'}</h2>
                             <div style={{ display: 'grid', gap: '1rem' }}>
                                 {schema.map(col => (

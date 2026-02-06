@@ -65,11 +65,11 @@ if ! kill -0 $WORKER_PID 2>/dev/null; then
     echo "❌ Error: Python Worker failed to start. Check comedor_worker.log."
 fi
 # 4. Start Frontend (Optional, usually for dev)
-# echo "🎨 Starting Frontend..."
-# cd frontend
-# nohup npm run dev > ../frontend.log 2>&1 &
-# FRONTEND_PID=$!
-# cd ..
+echo "🎨 Starting Frontend..."
+cd frontend
+nohup npm run dev > ../frontend.log 2>&1 &
+FRONTEND_PID=$!
+cd ..
 
 sleep 2
 if ! ps -p $BACKEND_PID > /dev/null; then

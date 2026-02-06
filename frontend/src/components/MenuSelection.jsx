@@ -57,16 +57,63 @@ const MenuSelection = () => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(false);
     const [dates, setDates] = useState([]);
+    const isSelection = React.useRef(false);
     // selections: { '2023-10-27': 1 (Normal) | 2 (Diet) | null (No lunch) }
     // selections: { '2023-10-27': 1 (Normal) | 2 (Diet) | null (No lunch) }
     const [selections, setSelections] = useState({});
     const [savedSelections, setSavedSelections] = useState({}); // Track what is actually in DB
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
 
     useEffect(() => {
         setDates(getWeekDates());
     }, []);
+
+    // Debounced search effect
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(async () => {
+            if (isSelection.current) {
+                isSelection.current = false;
+                return;
+            }
+
+            if (userId.length > 1 && !userId.match(/^\d+$/)) {
+                // If it's not just numbers, try searching names
+                try {
+                    const res = await axios.get(`/api/users/search/query?q=${userId}`);
+                    setSuggestions(res.data);
+                    setShowSuggestions(true);
+                } catch (e) {
+                    setSuggestions([]);
+                }
+            } else if (userId.length > 0) {
+                // Even if number, maybe search? User said "example I am 33 that put Garcia"
+                // But also "users related 33 - GARCIA..."
+                // So searching by number is also good.
+                try {
+                    const res = await axios.get(`/api/users/search/query?q=${userId}`);
+                    setSuggestions(res.data);
+                    setShowSuggestions(true);
+                } catch (e) {
+                    setSuggestions([]);
+                }
+            } else {
+                setSuggestions([]);
+                setShowSuggestions(false);
+            }
+        }, 300);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [userId]);
+
+    const selectSuggestion = (id, name) => {
+        isSelection.current = true;
+        setUserId(String(id));
+        setSuggestions([]);
+        setShowSuggestions(false);
+    };
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -138,9 +185,9 @@ const MenuSelection = () => {
     };
 
     return (
-        <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem' }}>
+        <div className="menu-container" style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem' }}>
             {!user ? (
-                <div className="card" style={{ maxWidth: '400px', margin: '4rem auto', textAlign: 'center' }}>
+                <div className="card login-card" style={{ maxWidth: '400px', margin: '4rem auto', textAlign: 'center' }}>
                     <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center' }}>
                         <div style={{ padding: '1rem', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '50%' }}>
                             <Utensils size={48} color="#38bdf8" />
@@ -150,10 +197,10 @@ const MenuSelection = () => {
                     <p style={{ color: '#94a3b8', marginBottom: '2rem' }}>Ingresa tu Código de Reloj para continuar</p>
 
                     <form onSubmit={handleLogin}>
-                        <div style={{ marginBottom: '1.5rem' }}>
+                        <div style={{ marginBottom: '1.5rem', position: 'relative' }}>
                             <input
                                 type="text"
-                                placeholder="ID de Usuario"
+                                placeholder="ID o Nombre..."
                                 value={userId}
                                 onChange={e => setUserId(e.target.value)}
                                 style={{
@@ -164,10 +211,47 @@ const MenuSelection = () => {
                                     border: '1px solid #334155',
                                     color: 'white',
                                     fontSize: '1.1rem',
-                                    textAlign: 'center'
+                                    textAlign: 'center',
+                                    boxSizing: 'border-box'
                                 }}
                                 autoFocus
+                                autoComplete="off"
                             />
+                            {/* Suggestions Dropdown */}
+                            {showSuggestions && suggestions.length > 0 && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    background: '#1e293b',
+                                    border: '1px solid #475569',
+                                    borderRadius: '0 0 8px 8px',
+                                    zIndex: 10,
+                                    maxHeight: '200px',
+                                    overflowY: 'auto',
+                                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
+                                }}>
+                                    {suggestions.map(s => (
+                                        <div
+                                            key={s.zk_id}
+                                            onClick={() => selectSuggestion(s.zk_id, s.nombre_completo)}
+                                            style={{
+                                                padding: '0.75rem',
+                                                borderBottom: '1px solid #334155',
+                                                cursor: 'pointer',
+                                                textAlign: 'left',
+                                                color: '#cbd5e1',
+                                                fontSize: '0.95rem'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = '#334155'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            <span style={{ fontWeight: 'bold', color: '#38bdf8' }}>{s.zk_id}</span> - {s.nombre_completo}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         <button
                             type="submit"
@@ -209,7 +293,7 @@ const MenuSelection = () => {
                         </button>
                     </div>
 
-                    <div style={{ display: 'grid', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'minmax(0, 1fr)' }}>
                         {dates.map((d) => {
                             const selected = !!selections[d.date];
                             const option = selections[d.date]; // 1 = Normal, 2 = Diet
@@ -229,23 +313,19 @@ const MenuSelection = () => {
                             const isLocked = isPast || isLate || isSaved;
 
                             return (
-                                <div key={d.date} className="card" style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
+                                <div key={d.date} className="card day-card" style={{
                                     border: selected ? '1px solid #3b82f6' : '1px solid transparent',
                                     background: isLocked ? 'rgba(30, 41, 59, 0.5)' : (selected ? 'rgba(59, 130, 246, 0.05)' : '#1e293b'),
                                     opacity: isLocked ? 0.6 : 1,
                                     pointerEvents: isLocked ? 'none' : 'auto',
-                                    position: 'relative'
                                 }}>
                                     {isLocked && (
-                                        <div style={{ position: 'absolute', right: '10px', top: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <div className="day-status">
                                             <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{isPast ? 'Cerrado' : (isLate ? 'Hora límite excedida' : 'Confirmado')}</span>
                                             <span style={{ fontSize: '1rem' }}>🔒</span>
                                         </div>
                                     )}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                                    <div className="day-content">
                                         <div
                                             onClick={() => toggleDay(d.date)}
                                             style={{
@@ -257,7 +337,8 @@ const MenuSelection = () => {
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                cursor: isLocked ? 'not-allowed' : 'pointer'
+                                                cursor: isLocked ? 'not-allowed' : 'pointer',
+                                                flexShrink: 0 // Prevent checkbox shrinking
                                             }}
                                         >
                                             {selected && <Check size={16} color="white" />}
@@ -269,7 +350,7 @@ const MenuSelection = () => {
                                     </div>
 
                                     {selected && (
-                                        <div style={{ display: 'flex', gap: '0.5rem', background: '#0f172a', padding: '0.25rem', borderRadius: '8px' }}>
+                                        <div className="day-actions">
                                             <button
                                                 onClick={() => setOption(d.date, 1)}
                                                 style={{

@@ -116,17 +116,17 @@ const Dashboard = () => {
                     <p className="header-subtitle">Visualización en tiempo real de tickets y almuerzos</p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div className="header-controls">
 
                     {/* Filters */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                        <Calendar size={16} color="#94a3b8" />
+                    <div className="filters-container">
+                        <Calendar size={16} color="#94a3b8" style={{ minWidth: '16px' }} />
                         <input
                             type="date"
                             name="start"
                             value={dateRange.start}
                             onChange={handleDateChange}
-                            style={{ background: 'transparent', border: 'none', color: '#f1f5f9', fontSize: '0.875rem', colorScheme: 'dark' }}
+                            className="date-input"
                         />
                         <span style={{ color: '#94a3b8' }}>a</span>
                         <input
@@ -134,13 +134,13 @@ const Dashboard = () => {
                             name="end"
                             value={dateRange.end}
                             onChange={handleDateChange}
-                            style={{ background: 'transparent', border: 'none', color: '#f1f5f9', fontSize: '0.875rem', colorScheme: 'dark' }}
+                            className="date-input"
                         />
 
 
-                        <div style={{ width: '1px', height: '20px', background: 'var(--glass-border)', margin: '0 0.5rem' }}></div>
+                        <div className="filter-separator" style={{ width: '1px', height: '20px', background: 'var(--glass-border)', margin: '0 0.5rem' }}></div>
 
-                        <a href="/seleccion" target="_blank" style={{ textDecoration: 'none' }}>
+                        <a href="/seleccion" target="_blank" style={{ textDecoration: 'none' }} className="menu-btn-link">
                             <button style={{
                                 background: '#8b5cf6',
                                 border: 'none',
@@ -151,8 +151,9 @@ const Dashboard = () => {
                                 fontSize: '0.875rem',
                                 display: 'flex',
                                 alignItems: 'center',
+                                justifyContent: 'center',
                                 gap: '0.5rem'
-                            }}>
+                            }} className="menu-btn">
                                 <Utensils size={14} /> Menú Semanal
                             </button>
                         </a>
@@ -160,14 +161,7 @@ const Dashboard = () => {
                         <select
                             value={typeFilter}
                             onChange={handleTypeChange}
-                            style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#f1f5f9',
-                                fontSize: '0.875rem',
-                                outline: 'none',
-                                cursor: 'pointer'
-                            }}
+                            className="filter-select"
                         >
                             <option value="" style={{ background: '#1e293b' }}>Todos los Tipos</option>
                             <option value="extra" style={{ background: '#1e293b' }}>Tickets Extra</option>
@@ -176,7 +170,6 @@ const Dashboard = () => {
                         <button
                             onClick={handleFilter}
                             style={{
-                                marginLeft: '0.5rem',
                                 background: '#3b82f6',
                                 border: 'none',
                                 borderRadius: '4px',
@@ -185,20 +178,13 @@ const Dashboard = () => {
                                 cursor: 'pointer',
                                 fontSize: '0.875rem'
                             }}
+                            className="filter-btn"
                         >
                             Filtrar
                         </button>
                     </div>
 
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.5rem 1rem',
-                        borderRadius: '999px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid var(--glass-border)'
-                    }}>
+                    <div className="db-status-badge">
                         <Database size={16} color={dbStatus === 'online' ? '#10b981' : '#ef4444'} />
                         <span style={{ fontSize: '0.875rem', color: dbStatus === 'online' ? '#10b981' : '#ef4444' }}>
                             {dbStatus === 'online' ? 'Base de Datos Conectada' : 'Sin Conexión a BD'}
@@ -239,7 +225,7 @@ const Dashboard = () => {
                 />
             </div>
 
-            <div className="dashboard-grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
+            <div className="charts-grid">
                 <div className="card">
                     <h3 className="stat-label">Tendencia ({dateRange.start ? 'Personalizada' : 'Ultimos 7 dias'})</h3>
                     <DailyTrendChart data={dailyData} />
@@ -273,8 +259,8 @@ const Dashboard = () => {
             </div>
 
             <div className="dashboard-grid" style={{ gridTemplateColumns: "1fr", marginTop: '1.5rem' }}>
-                <div className="card" style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', color: '#94a3b8' }}>
+                <div className="card history-table-container">
+                    <table className="history-table">
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
                                 <th style={{ padding: '1rem' }}>Usuario</th>
