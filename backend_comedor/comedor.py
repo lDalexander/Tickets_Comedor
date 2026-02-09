@@ -40,9 +40,9 @@ SMTP_USER     = os.getenv('SMTP_USER', 'no-reply@detcuador.com')
 SMTP_PASS     = os.getenv('SMTP_PASS')
 EMAIL_DESTINO = os.getenv('EMAIL_DESTINO', 'agarcia@detcuador.com')
 
-IDS_VIPS = ['14', '27', '33'] 
-IDS_CON_DIETA = ['110','90','12','91','83','2','112','72','96','11','38','79','81','48','7','140','111','80','143','71','64','66','67','73','13','52','91','92','81','98','97']
-IDS_CON_ESPECIAL = ['16', '119'] # Lista para TIPO: GERENCIA
+IDS_VIPS = ['14', '27'] 
+IDS_CON_DIETA = ['110','90','12','91','83','2','112','72','96','11','38','79','81','48','7','140','111','80','143','71','64','66','67','73','13','52','91','92','81','98','97','107']
+IDS_CON_ESPECIAL = ['16', '119', '120'] # Lista para TIPO: GERENCIA
 
 DB_CONFIG = {
     'user': os.getenv('DB_USER', 'root'),
@@ -519,6 +519,33 @@ def imprimir_ticket_duplicado(nombre, user_id):
     finally:
         if p: p.close()
 
+def imprimir_ticket_mantenimiento():
+    p = None
+    try:
+        p = Network(IP_IMPRESORA)
+        p.set(align='center')
+        p.text("\n\n")
+        p.set(align='center', bold=True, invert=True, triple_height=True, width=2)
+        p.text(" ALERTA \n")
+        p.set(align='center', bold=True, invert=False, double_height=True)
+        p.text("\nTENEMOS INCONVENIENTES\n")
+        
+        p.set(align='center', bold=True, invert=False, double_height=False)
+        p.text("REALIZANDO MANTENIMIENTO\n")
+        p.text("AUTOMATICO...\n\n")
+        
+        p.set(align='center', bold=True, double_height=True)
+        p.text("ESPERE 5 MINUTOS Y\nVUELVA A INTENTAR\n")
+        
+        p.text("\n\n\n")
+        p.cut()
+        print(f"🖨️ [IMP] Ticket MANTENIMIENTO enviado.")
+    except Exception as e:
+        logging.error(f"Error impresión ticket mantenimiento: {e}")
+    finally:
+        if p: p.close()
+
+
 # ==========================================
 #   MAIN
 # ==========================================
@@ -573,8 +600,36 @@ def main():
                 
                 resultado = registrar_evento(event.user_id, nombre_completo)
 
+                if resultado == "ERROR":
+                    msg_error = "❌ Error Crítico en Registro: Iniciando Protocolo de Mantenimiento..."
+                    print(msg_error)
+                    logging.error("Iniciando Mantenimiento Automático por fallo en DB.")
+                    
+                    # 1. PRIORIDAD: Intentar imprimir ticket de error (Forzado)
+                    # Ignoramos el estado anterior para intentar a toda costa.
+                    try:
+                        imprimir_ticket_mantenimiento()
+                    except:
+                        pass # Si falla, falla. Pero intentamos.
+
+                    # 2. Notificar por Correo
+                    enviar_correo("🚨 FALLO CRÍTICO - SISTEMA COMEDOR", 
+                                  "El sistema no pudo registrar un evento en la base de datos.\n"
+                                  "Posible falla de conexión a MySQL.\n\n"
+                                  "⚠️ ACCIONES TOMADAS:\n"
+                                  "1. Se intentó imprimir ticket de notificación al usuario.\n"
+                                  "2. Se ejecutó script de auto-reparación (daily_maintenance.sh).\n")
+                    
+                    # 3. Ejecutar script de mantenimiento en segundo plano
+                    try:
+                        subprocess.Popen(["sudo", "/home/john/comedor/Tickets_Comedor/daily_maintenance.sh"], 
+                                         stdout=subprocess.DEVNULL, 
+                                         stderr=subprocess.DEVNULL)
+                    except Exception as sub_e:
+                        logging.error(f"No se pudo ejecutar script mantenimiento: {sub_e}")
+
                 # Imprimir solo si impresora está OK
-                if estado_imp in ["OFFLINE", "SIN_PAPEL", "TAPA_ABIERTA", "ERROR_MECANICO"]:
+                elif estado_imp in ["OFFLINE", "SIN_PAPEL", "TAPA_ABIERTA", "ERROR_MECANICO"]:
                     err = f"❌ OMITIENDO IMPRESIÓN: {estado_imp}"
                     print(err)
                     logging.error(err)
@@ -588,8 +643,8 @@ def main():
                         imprimir_ticket_valido(nombre_completo, event.user_id)
                     elif resultado == "TICKET EXTRA":
                         imprimir_ticket_extra(nombre_completo)
-                    elif resultado == "DUPLICADO":
-                        imprimir_ticket_duplicado(nombre_completo, event.user_id)
+                    elif resultado == "INTENTO DE DUPLICADO":
+                         imprimir_ticket_duplicado(nombre_completo, event.user_id)
 
                 sys.stdout.flush() 
 

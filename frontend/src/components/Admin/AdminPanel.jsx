@@ -21,9 +21,14 @@ const AdminPanel = () => {
     const formatCell = (col, value) => {
         if (!value) return '';
         if (col.toLowerCase().includes('fecha')) {
-            // value is usually string "2026-02-04T00:00:00.000Z"
+            // value is usually string "2026-02-04T00:00:00.000Z" or just "2026-02-04"
+            if (!value) return '';
             const d = new Date(value);
-            return d.toLocaleDateString('es-ES');
+            // Use UTC methods to prevent timezone shifting (e.g. 00:00 UTC -> 19:00 Prev Day)
+            const day = d.getUTCDate().toString().padStart(2, '0');
+            const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+            const year = d.getUTCFullYear();
+            return `${day}/${month}/${year}`;
         }
         if (col.toLowerCase().includes('hora')) {
             // value is "16:02:18" (UTC) -> Need to show "11:02:18" (Local)
