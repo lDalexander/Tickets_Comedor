@@ -130,11 +130,12 @@ router.get('/stats/history', async (req, res) => {
 
         // Type Filter
         if (type) {
-            if (type === 'extra') conditions.push(`descripcion = 'Ticket Extra'`);
-            else if (type === 'normal') conditions.push(`descripcion = 'Ticket Almuerzo'`);
+            if (type === 'extra') conditions.push(`descripcion = 'TICKET EXTRA'`);
+            else if (type === 'normal') conditions.push(`descripcion = 'TICKET ALMUERZO'`);
         } else {
-            // Default: Show only successful tickets (Hide duplicates)
-            conditions.push(`descripcion IN ('Ticket Extra', 'Ticket Almuerzo')`);
+            // Default: Show unique tickets (Hide duplicates)
+            // Fix: Include DIETA and GERENCIA, and use Uppercase to match DB
+            conditions.push(`descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta')`);
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -143,7 +144,7 @@ router.get('/stats/history', async (req, res) => {
             SELECT id, nombre as user, hora as time, fecha as date, descripcion as type 
             FROM registros 
             ${whereClause}
-            ORDER BY fecha DESC, hora DESC 
+            ORDER BY id DESC 
             LIMIT 100
         `;
 

@@ -12,6 +12,7 @@ from zk import ZK, const
 import mysql.connector
 from escpos.printer import Network
 import os
+import subprocess
 from dotenv import load_dotenv
 
 # Cargar variables de entorno
@@ -523,11 +524,16 @@ def imprimir_ticket_mantenimiento():
     p = None
     try:
         p = Network(IP_IMPRESORA)
+        # Importante: Inicializar/Resetear impresora
+        p.hw("INIT") 
         p.set(align='center')
+        
         p.text("\n\n")
-        p.set(align='center', bold=True, invert=True, triple_height=True, width=2)
+        # Usamos double_height y double_width que son estandar
+        p.set(align='center', bold=True, double_height=True, double_width=True, invert=True)
         p.text(" ALERTA \n")
-        p.set(align='center', bold=True, invert=False, double_height=True)
+        
+        p.set(align='center', bold=True, invert=False, double_height=True, double_width=False)
         p.text("\nTENEMOS INCONVENIENTES\n")
         
         p.set(align='center', bold=True, invert=False, double_height=False)
@@ -541,6 +547,12 @@ def imprimir_ticket_mantenimiento():
         p.cut()
         print(f"🖨️ [IMP] Ticket MANTENIMIENTO enviado.")
     except Exception as e:
+        # Fallback a impresion simple si falla el estilo
+        try:
+             if p:
+                p.text("\nALERTA: MANTENIMIENTO\nESPERE 5 MINUTOS\n\n\n")
+                p.cut()
+        except: pass
         logging.error(f"Error impresión ticket mantenimiento: {e}")
     finally:
         if p: p.close()
@@ -644,7 +656,8 @@ def main():
                     elif resultado == "TICKET EXTRA":
                         imprimir_ticket_extra(nombre_completo)
                     elif resultado == "INTENTO DE DUPLICADO":
-                         imprimir_ticket_duplicado(nombre_completo, event.user_id)
+                         # imprimir_ticket_duplicado(nombre_completo, event.user_id)
+                         print(f"🚫 Intento de duplicado para {nombre_completo} (Sin impresión)")
 
                 sys.stdout.flush() 
 
