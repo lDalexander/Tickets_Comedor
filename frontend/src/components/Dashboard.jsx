@@ -295,6 +295,33 @@ const Dashboard = () => {
             <LiveTerminal />
 
             <div className="page-header" style={{ marginTop: '2rem', textAlign: 'center', borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <a href="/admin">
+                        <button style={{
+                            background: 'rgba(0, 0, 0, 0.58)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '6px',
+                            color: '#ffffffff',
+                            padding: '0.5rem 1.5rem',
+                            cursor: 'pointer',
+                            fontSize: '0.875rem',
+                            transition: 'all 0.2s'
+                        }}
+                            onMouseEnter={(e) => {
+                                e.target.style.background = 'rgba(255, 255, 255, 0.1)';
+                                e.target.style.color = 'white';
+                                e.target.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.target.style.background = 'rgba(255, 255, 255, 1)';
+                                e.target.style.color = '#000000ff';
+                                e.target.style.borderColor = 'rgba(0, 225, 255, 0.1)';
+                            }}
+                        >
+                            ADMIN
+                        </button>
+                    </a>
+                </div>
                 <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
                     John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 2.9
                 </p>

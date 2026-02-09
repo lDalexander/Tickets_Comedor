@@ -42,25 +42,25 @@ router.get('/stats/summary', async (req, res) => {
 
         // 1. Total Lunches
         const lunchesRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta')`,
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA')`,
             params
         );
 
-        // 2. Special Tickets (Dieta)
+        // 2. Special Tickets (Dieta + Extra + Gerencia)
         const specialRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Extra', 'Ticket Dieta')`,
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA')`,
             params
         );
 
         // 3. Normal Tickets (Ticket Almuerzo)
         const normalRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion = 'Ticket Almuerzo'`,
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'TICKET ALMUERZO')`,
             params
         );
 
         // 4. Most Popular Type
         const popRows = await db.query(
-            `SELECT descripcion, COUNT(*) as count FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra') GROUP BY descripcion ORDER BY count DESC LIMIT 1`,
+            `SELECT descripcion, COUNT(*) as count FROM registros WHERE ${dateCondition} AND descripcion NOT IN ('INTENTO DE DUPLICADO', 'Intento de Duplicado') GROUP BY descripcion ORDER BY count DESC LIMIT 1`,
             params
         );
 
@@ -91,9 +91,9 @@ router.get('/stats/daily', async (req, res) => {
         const sql = `
             SELECT 
                 DATE(fecha) as date,
-                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta') THEN 1 ELSE 0 END) as lunches,
-                SUM(CASE WHEN descripcion = 'Ticket Almuerzo' THEN 1 ELSE 0 END) as type_normal,
-                SUM(CASE WHEN descripcion IN ('Ticket Extra', 'Ticket Dieta') THEN 1 ELSE 0 END) as type_special
+                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA') THEN 1 ELSE 0 END) as lunches,
+                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'TICKET ALMUERZO') THEN 1 ELSE 0 END) as type_normal,
+                SUM(CASE WHEN descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA') THEN 1 ELSE 0 END) as type_special
             FROM registros 
             WHERE ${dateCondition}
             GROUP BY DATE(fecha)
