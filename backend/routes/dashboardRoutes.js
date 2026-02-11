@@ -141,7 +141,7 @@ router.get('/stats/history', async (req, res) => {
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
         const sql = `
-            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type 
+            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type, numero_ticket 
             FROM registros 
             ${whereClause}
             ORDER BY id DESC 
@@ -183,18 +183,18 @@ router.get('/stats/export-excel', async (req, res) => {
 
         // Type Filter (matches history logic)
         if (type) {
-            if (type === 'extra') conditions.push(`descripcion = 'Ticket Extra'`);
-            else if (type === 'normal') conditions.push(`descripcion = 'Ticket Almuerzo'`);
+            if (type === 'extra') conditions.push(`descripcion = 'TICKET EXTRA'`);
+            else if (type === 'normal') conditions.push(`descripcion = 'TICKET ALMUERZO'`);
         } else {
-            // Default: Show only successful tickets (Hide duplicates)
-            conditions.push(`descripcion IN ('Ticket Extra', 'Ticket Almuerzo')`);
+            // Default: Show ALL tickets except duplicates (Safe for new types)
+            conditions.push(`descripcion NOT IN ('INTENTO DE DUPLICADO', 'Intento de Duplicado')`);
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
         // Query without LIMIT for export
         const sql = `
-            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type 
+            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type, numero_ticket 
             FROM registros 
             ${whereClause}
             ORDER BY fecha DESC, hora DESC
@@ -209,6 +209,7 @@ router.get('/stats/export-excel', async (req, res) => {
         // Columns
         worksheet.columns = [
             { header: 'ID', key: 'id', width: 10 },
+            { header: 'N° Ticket', key: 'ticket', width: 10 },
             { header: 'Usuario', key: 'user', width: 30 },
             { header: 'Fecha', key: 'date', width: 15 },
             { header: 'Hora', key: 'time', width: 15 },
@@ -221,7 +222,8 @@ router.get('/stats/export-excel', async (req, res) => {
             const rowData = {
                 ...row,
                 date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : row.date,
-                status: row.type === 'Intento de Duplicado' ? 'Bloqueado' : 'Exitoso'
+                status: row.type === 'Intento de Duplicado' ? 'Bloqueado' : 'Exitoso',
+                ticket: row.numero_ticket || '-'
             };
             worksheet.addRow(rowData);
         });

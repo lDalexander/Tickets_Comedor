@@ -1,7 +1,7 @@
 
 import os
 import textwrap
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from escpos.printer import Network
 
@@ -30,7 +30,7 @@ def print_normal_ticket(user_id, name):
         p.text("CONTROL DE COMEDOR\n")
         p.text("--------------------------------\n")
         
-        fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
+        fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
         p.set(align='left')
         p.text(f"FECHA: {fecha}\n")
         p.text("COLABORADOR:\n")
@@ -77,7 +77,7 @@ def print_test_ticket(user_id, name):
         p.text("CONTROL DE COMEDOR\n")
         p.text("--------------------------------\n")
         
-        fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
+        fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
         p.set(align='left')
         p.text(f"FECHA: {fecha}\n")
         p.text("COLABORADOR:\n")

@@ -263,6 +263,7 @@ const Dashboard = () => {
                     <table className="history-table">
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                                <th style={{ padding: '1rem' }}>N° Ticket</th>
                                 <th style={{ padding: '1rem' }}>Usuario</th>
                                 <th style={{ padding: '1rem' }}>Hora</th>
                                 <th style={{ padding: '1rem' }}>Fecha</th>
@@ -273,6 +274,7 @@ const Dashboard = () => {
                         <tbody>
                             {historyLog.map(item => (
                                 <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <td style={{ padding: '1rem' }}>{item.numero_ticket || '-'}</td>
                                     <td style={{ padding: '1rem', color: '#f1f5f9' }}>{item.user}</td>
                                     <td style={{ padding: '1rem' }}>{formatTime(item.date, item.time)}</td>
                                     <td style={{ padding: '1rem' }}>{item.date}</td>
@@ -323,7 +325,7 @@ const Dashboard = () => {
                     </a>
                 </div>
                 <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
-                    John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 2.9
+                    John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 3.0
                 </p>
             </div>
         </div>

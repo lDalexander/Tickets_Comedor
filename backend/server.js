@@ -47,11 +47,17 @@ app.use('/api', dashboardRoutes);
 const db = require('./db');
 
 // --- MEAL SELECTION ROUTES ---
+
 app.get('/api/users/:id', async (req, res) => {
     try {
-        const rows = await db.query('SELECT nombre_completo FROM usuarios WHERE zk_id = ?', [req.params.id]);
+        const rows = await db.query('SELECT nombre_completo, role, tipo_menu_predeterminado FROM usuarios WHERE zk_id = ?', [req.params.id]);
         if (rows.length > 0) {
-            res.json({ success: true, name: rows[0].nombre_completo });
+            res.json({
+                success: true,
+                name: rows[0].nombre_completo,
+                role: rows[0].role || 'Operativo',
+                defaultMenuType: rows[0].tipo_menu_predeterminado || 'Normal'
+            });
         } else {
             res.status(404).json({ success: false, message: 'Usuario no encontrado' });
         }
@@ -61,7 +67,29 @@ app.get('/api/users/:id', async (req, res) => {
     }
 });
 
-app.get('/api/users/search/query', async (req, res) => {
+app.put('/api/users/:id/preferences', async (req, res) => {
+    const { role, defaultMenuType } = req.body;
+    try {
+        // Only update allowed fields
+        await db.query('UPDATE usuarios SET role = ?, tipo_menu_predeterminado = ? WHERE zk_id = ?',
+            [role, defaultMenuType, req.params.id]
+        );
+
+        // Emit log event for preference change
+        io.emit('new_log', {
+            type: 'WEB',
+            message: `Preferencias actualizadas (ID: ${req.params.id}) -> Rol: ${role}, Menú: ${defaultMenuType}`,
+            status: 'success'
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('Error updating preferences:', error);
+        res.status(500).json({ success: false, error: 'Database error' });
+    }
+});
+
+app.get('/api/search/users', async (req, res) => {
     try {
         const { q } = req.query;
         if (!q) return res.json([]);
@@ -117,6 +145,14 @@ app.post('/api/menu', async (req, res) => {
             }
         }
         await connection.commit();
+
+        // Emit log event for menu change
+        io.emit('new_log', {
+            type: 'WEB',
+            message: `Menú actualizado para usuario ID: ${userId}`,
+            status: 'success'
+        });
+
         res.json({ success: true });
     } catch (error) {
         if (connection) await connection.rollback();

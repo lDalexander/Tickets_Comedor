@@ -7,7 +7,7 @@ import logging
 import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from datetime import datetime, timedelta
 from zk import ZK, const
 import mysql.connector
 from escpos.printer import Network
@@ -42,7 +42,7 @@ SMTP_PASS     = os.getenv('SMTP_PASS')
 EMAIL_DESTINO = os.getenv('EMAIL_DESTINO', 'agarcia@detcuador.com')
 
 IDS_VIPS = ['14', '27'] 
-IDS_CON_DIETA = ['110','90','12','91','83','2','112','72','96','11','38','79','81','48','7','140','111','80','143','71','64','66','67','73','13','52','91','92','81','98','97','107']
+# IDS_CON_DIETA = [...] (REMOVIDO: Ahora se consulta en BD)
 IDS_CON_ESPECIAL = ['16', '119', '120'] # Lista para TIPO: GERENCIA
 
 DB_CONFIG = {
@@ -255,7 +255,7 @@ def registrar_evento(user_id, nombre):
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
-        ahora = datetime.now()
+        ahora = datetime.now() - timedelta(hours=5)
         fecha_hoy = ahora.date()
 
         # Verificar selección de menú (Web)
@@ -263,12 +263,16 @@ def registrar_evento(user_id, nombre):
         cursor.execute(query_menu, (user_id, fecha_hoy))
         menu_res = cursor.fetchone()
         
+
         es_dieta_seleccion = False
         if menu_res and menu_res[0] == 2:
             es_dieta_seleccion = True
-        elif not menu_res and str(user_id) in IDS_CON_DIETA:
-            # Mantener compatibilidad con lista fija si no hay selección web
-            es_dieta_seleccion = True
+        elif not menu_res:
+            # Check default preference in DB if no daily selection
+            cursor.execute("SELECT tipo_menu_predeterminado FROM usuarios WHERE zk_id = %s", (user_id,))
+            user_pref = cursor.fetchone()
+            if user_pref and user_pref[0] == 'Dieta':
+                es_dieta_seleccion = True
 
         es_especial = str(user_id) in IDS_CON_ESPECIAL
 
@@ -289,19 +293,34 @@ def registrar_evento(user_id, nombre):
             else:
                 tipo_evento = "INTENTO DE DUPLICADO"
 
-        sql_insert = "INSERT INTO registros (user_id, nombre, fecha, hora, descripcion) VALUES (%s, %s, %s, %s, %s)"
-        val_insert = (user_id, nombre, fecha_hoy, ahora.time(), tipo_evento)
+        # 1. Obtener números usados hoy en orden ascendente
+        sql_used = "SELECT numero_ticket FROM registros WHERE fecha = %s AND descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA') ORDER BY numero_ticket ASC"
+        cursor.execute(sql_used, (fecha_hoy,))
+        used_numbers = [row[0] for row in cursor.fetchall()]
+
+        # 2. Encontrar el primer hueco
+        ticket_number = 1
+        for n in used_numbers:
+            if n == ticket_number:
+                ticket_number += 1
+            elif n > ticket_number:
+                # Hueco encontrado
+                break
+        
+        # 3. Insertar con número de ticket
+        sql_insert = "INSERT INTO registros (user_id, nombre, fecha, hora, descripcion, numero_ticket) VALUES (%s, %s, %s, %s, %s, %s)"
+        val_insert = (user_id, nombre, fecha_hoy, ahora.time(), tipo_evento, ticket_number)
         cursor.execute(sql_insert, val_insert)
         conn.commit()
         
-        log_msg = f"✅ [BD] REGISTRADO: {nombre} -> {tipo_evento}"
+        log_msg = f"✅ [BD] REGISTRADO: {nombre} -> {tipo_evento} (N: {ticket_number})"
         print(log_msg)
         logging.info(log_msg)
-        return tipo_evento
+        return tipo_evento, ticket_number
 
     except Exception as e:
         logging.error(f"Error BD al registrar: {e}")
-        return "ERROR"
+        return "ERROR", 0
     finally:
         if conn and conn.is_connected():
             cursor.close()
@@ -340,7 +359,7 @@ def sincronizar_usuarios_db(zk_conn):
             conn_db.close()
 
 # --- FUNCIONES DE IMPRESIÓN ---
-def imprimir_ticket_valido(nombre, user_id):
+def imprimir_ticket_valido(nombre, user_id, ticket_number):
     p = None
     
     # Valores por defecto
@@ -368,9 +387,12 @@ def imprimir_ticket_valido(nombre, user_id):
                 if sin_sopa_db == 1: sin_sopa = True
                 if sin_arroz_db == 1: sin_arroz = True
             else:
-                # Si no hay web, revisamos lista fija
-                if str(user_id) in IDS_CON_DIETA:
+                # Si no hay web, consultar preferencia por defecto
+                cur_temp.execute("SELECT tipo_menu_predeterminado FROM usuarios WHERE zk_id = %s", (user_id,))
+                user_pref = cur_temp.fetchone()
+                if user_pref and user_pref[0] == 'Dieta':
                     es_dieta = True
+
                 if str(user_id) in IDS_CON_ESPECIAL:
                     es_especial = True
             
@@ -392,9 +414,12 @@ def imprimir_ticket_valido(nombre, user_id):
         p.text("DETCUADOR S.A.\n")
         p.set(align='center', bold=False, double_height=False)
         p.text("CONTROL DE COMEDOR\n")
+        p.set(align='center', bold=True)
+        p.text(f"N: {ticket_number}\n")
+        p.set(align='center', bold=False)
         p.text("--------------------------------\n")
         
-        fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
+        fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
         p.set(align='left')
         p.text(f"FECHA: {fecha}\n")
         p.text("COLABORADOR:\n")
@@ -441,7 +466,10 @@ def imprimir_ticket_valido(nombre, user_id):
         p.set(align='center', bold=True, invert=True)
         p.text(" VALIDO POR 1 ALMUERZO \n\n")
         p.set(align='center', bold=False, invert=False)
-        p.text(" Powered by John Alexander Garcia")
+        p.set(align='center', bold=False, invert=False)
+        p.text("Desarrollado por: John Garcia\n")
+        p.text("Version: 3.0\n")
+
         p.text("\n\n\n")
         p.cut()
         print(f"🖨️ [IMP] Ticket enviado.")
@@ -452,7 +480,7 @@ def imprimir_ticket_valido(nombre, user_id):
     finally:
         if p: p.close()
 
-def imprimir_ticket_extra(nombre_vip):
+def imprimir_ticket_extra(nombre_vip, ticket_number):
     p = None
     try:
         p = Network(IP_IMPRESORA)
@@ -463,9 +491,12 @@ def imprimir_ticket_extra(nombre_vip):
         p.set(align='center', bold=True)
         p.text("DETCUADOR S.A.\n")
         p.text("TICKET EXTRA\n")
+        p.set(align='center', bold=True)
+        p.text(f"N: {ticket_number}\n")
+        p.set(align='center', bold=False)
         p.text("--------------------------------\n")
         
-        fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
+        fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
         p.set(align='left')
         p.text(f"AUTORIZA: {nombre_vip}\n")
         p.text(f"FECHA:    {fecha}\n")
@@ -480,7 +511,8 @@ def imprimir_ticket_extra(nombre_vip):
         p.set(align='center', bold=True, invert=True)
         p.text(" VALIDO POR 1 ALMUERZO \n\n")
         p.set(align='center', bold=False, invert=False)        
-        p.text(" Powered by John Alexander Garcia")
+        p.text("Desarrollado por: John Garcia\n")
+        p.text("Version: 3.0\n")
         p.text("\n\n\n")
         p.cut()
         print(f"🖨️ [IMP] Ticket EXTRA enviado.")
@@ -500,7 +532,7 @@ def imprimir_ticket_duplicado(nombre, user_id):
         p.text("=== TICKET NO VALIDO ===\n")
         p.text("--------------------------------\n")
         
-        fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
+        fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
         p.set(align='left', bold=False)
         p.text(f"FECHA: {fecha}\n")
         p.text("--------------------------------\n")
@@ -610,7 +642,7 @@ def main():
                 nombre_completo = obtener_nombre_real(event.user_id, nombre_zk)
                 print(f"\n--> Asistencia: {nombre_completo}")
                 
-                resultado = registrar_evento(event.user_id, nombre_completo)
+                resultado, ticket_number = registrar_evento(event.user_id, nombre_completo)
 
                 if resultado == "ERROR":
                     msg_error = "❌ Error Crítico en Registro: Iniciando Protocolo de Mantenimiento..."
@@ -647,14 +679,14 @@ def main():
                     logging.error(err)
                 else:
                     if resultado == "TICKET ALMUERZO":
-                        imprimir_ticket_valido(nombre_completo, event.user_id)
+                        imprimir_ticket_valido(nombre_completo, event.user_id, ticket_number)
                     elif resultado == "TICKET DIETA":
                          # Uses same printing logic because it checks DB for 'es_dieta' flag
-                        imprimir_ticket_valido(nombre_completo, event.user_id)
+                        imprimir_ticket_valido(nombre_completo, event.user_id, ticket_number)
                     elif resultado == "TICKET GERENCIA":
-                        imprimir_ticket_valido(nombre_completo, event.user_id)
+                        imprimir_ticket_valido(nombre_completo, event.user_id, ticket_number)
                     elif resultado == "TICKET EXTRA":
-                        imprimir_ticket_extra(nombre_completo)
+                        imprimir_ticket_extra(nombre_completo, ticket_number)
                     elif resultado == "INTENTO DE DUPLICADO":
                          # imprimir_ticket_duplicado(nombre_completo, event.user_id)
                          print(f"🚫 Intento de duplicado para {nombre_completo} (Sin impresión)")
