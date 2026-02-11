@@ -104240,3 +104240,87 @@
 {"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:50:53"}
 {"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:50:53"}
 {"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:50:53"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:16"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:16"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:16"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:23"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:23"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:23"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:51:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:16"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:16"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:16"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:21"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:21"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:21"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:21"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:21"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:21"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:23"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:23"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:23"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:53"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:53"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:53"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:53"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:53"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:52:53"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:16"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:16"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:16"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:23"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:23"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:23"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:23"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:53"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:53"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:53"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:53"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:53"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:53:53"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:00"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:16"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:16"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:16"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:16"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:16"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Incoming request: GET /api/stats/history","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Incoming request: GET /api/health","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Fetched history logs with type=all","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Incoming request: GET /api/stats/summary","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Incoming request: GET /api/stats/daily","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
+{"level":"info","message":"Fetched summary stats from DB","service":"lunch-dashboard-backend","timestamp":"2026-02-11 20:54:20"}
