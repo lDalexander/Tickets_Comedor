@@ -181,6 +181,11 @@ else
     echo "   ❌ ERROR: Biométrico desconectado."
 fi
 
+echo "[8] Enviando Reporte SMTP..."
+cd "$PROJECT_DIR/backend_comedor"
+./venv/bin/python send_maintenance_status.py
+cd "$PROJECT_DIR"
+
 echo "========================================================"
 echo "🏁 FIN DE MANTENIMIENTO: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "========================================================"
