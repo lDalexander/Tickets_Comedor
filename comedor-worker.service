@@ -5,9 +5,9 @@ After=network.target mysql.service
 [Service]
 Type=simple
 User=john
-WorkingDirectory=/home/john/comedor/Tickets_Comedor/backend_comedor
+WorkingDirectory=/home/john/comedor/Tickets_Comedor/backend/python_core
 # Use the venv python
-ExecStart=/home/john/comedor/Tickets_Comedor/backend_comedor/venv/bin/python -u comedor.py
+ExecStart=/home/john/comedor/Tickets_Comedor/backend/python_core/venv/bin/python -u main.py
 Restart=always
 RestartSec=5
 

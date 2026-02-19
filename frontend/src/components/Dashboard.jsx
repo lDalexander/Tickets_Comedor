@@ -4,6 +4,7 @@ import axios from 'axios';
 import StatCard from './StatCard';
 import { DailyTrendChart, LunchTypeChart } from './Charts';
 import LiveTerminal from './LiveTerminal';
+import ManualTicketModal from './ManualTicketModal';
 import { Utensils, Ticket, AlertTriangle, Users, Database, Calendar } from 'lucide-react';
 
 const Dashboard = () => {
@@ -12,6 +13,7 @@ const Dashboard = () => {
     const [historyLog, setHistoryLog] = useState([]);
     const [dbStatus, setDbStatus] = useState('checking'); // 'online', 'offline', 'checking'
     const [loading, setLoading] = useState(true);
+    const [showManualModal, setShowManualModal] = useState(false);
 
     // Filter State
     const [dateRange, setDateRange] = useState({
@@ -92,9 +94,10 @@ const Dashboard = () => {
     const formatTime = (dateStr, timeStr) => {
         if (!dateStr || !timeStr) return timeStr;
         try {
-            // Assume database stores UTC
-            const utcDate = new Date(`${dateStr}T${timeStr}Z`);
-            return utcDate.toLocaleTimeString();
+            // Database stores Local Time (Ecuador). 
+            // Parsing ISO string without 'Z' treats it as Local Time in the browser.
+            const localDate = new Date(`${dateStr}T${timeStr}`);
+            return localDate.toLocaleTimeString();
         } catch (e) {
             return timeStr;
         }
@@ -117,6 +120,13 @@ const Dashboard = () => {
                 </div>
 
                 <div className="header-controls">
+                    {/* Botón Ticket Visitas (Nuevo) */}
+                    <button
+                        onClick={() => setShowManualModal(true)}
+                        className="ticket-visit-btn"
+                    >
+                        <Ticket size={16} /> Ticket Visitas
+                    </button>
 
                     {/* Filters */}
                     <div className="filters-container">
@@ -328,6 +338,8 @@ const Dashboard = () => {
                     John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 3.0
                 </p>
             </div>
+            {/* Manual Ticket Modal */}
+            {showManualModal && <ManualTicketModal onClose={() => setShowManualModal(false)} />}
         </div>
     );
 };

@@ -13,11 +13,12 @@ echo "--- Starting Comedor System Integration ---"
 echo "🧹 Cleaning up old processes..."
 pkill -f "node server.js"
 pkill -f "python comedor.py"
+pkill -f "python main.py"
 sleep 1
 
 # 1. Check for Environment Variables
-if [ ! -f "backend_comedor/.env" ]; then
-    echo "❌ Error: backend_comedor/.env not found!"
+if [ ! -f "backend/python_core/.env" ]; then
+    echo "❌ Error: backend/python_core/.env not found!"
     exit 1
 fi
 
@@ -37,7 +38,7 @@ cd ..
 
 # 3. Start Python Worker
 echo "🐍 Starting Python Comedor Worker..."
-cd backend_comedor
+cd backend/python_core
 if [ ! -d "venv" ]; then
     echo "📦 Creating Python virtual environment..."
     python3 -m venv venv
@@ -51,10 +52,10 @@ echo "📦 Checking Python dependencies..."
 # To speed up, we can skip if libs exist, but pip is fast enough.
 pip install -r requirements.txt > /dev/null 2>&1
 
-nohup python comedor.py > ../comedor_worker.log 2>&1 &
+nohup python main.py > ../../comedor_worker.log 2>&1 &
 WORKER_PID=$!
 echo "✅ Worker started (PID: $WORKER_PID)"
-cd ..
+cd ../..
 
 sleep 2
 # Validate PIDs

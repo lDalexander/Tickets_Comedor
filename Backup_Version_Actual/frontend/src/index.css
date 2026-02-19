@@ -1,0 +1,323 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg-dark: #0f172a;
+  --bg-card: rgba(30, 41, 59, 0.7);
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --accent-primary: #38bdf8;
+  --accent-secondary: #818cf8;
+  --accent-success: #10b981;
+  --accent-danger: #ef4444;
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  /* Abstract background shapes */
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.1) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(129, 140, 248, 0.1) 0%, transparent 40%);
+  min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-secondary);
+  border-radius: 4px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.stat-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+
+.page-header {
+  padding: 2rem 2rem 0;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.header-subtitle {
+  color: var(--text-secondary);
+}
+
+.cha.responsive-table {
+  overflow-x: auto;
+  background: #1e293b;
+  border-radius: 8px;
+  width: 100%;
+}
+
+.responsive-table table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+.responsive-table th,
+.responsive-table td {
+  white-space: nowrap;
+  padding: 0.75rem;
+  text-align: left;
+}
+
+/* =========================================
+   RESPONSIVE STYLES
+   ========================================= */
+
+@media (max-width: 768px) {
+
+  /* Adjust grid to single column */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  /* Status text adjustments */
+  .day-status {
+    top: 5px;
+    right: 5px;
+  }
+
+  /* Adjust page headers */
+  .page-header {
+    padding: 1rem 1rem 0;
+  }
+
+  .header-title {
+    font-size: 1.5rem;
+  }
+
+  /* Collapse filters stack if needed, though flex-wrap handles some */
+
+  /* Menu Selection Wrapper Class */
+  .menu-container {
+    padding: 1rem !important;
+    max-width: 100% !important;
+  }
+
+  /* Login Card padding reduction */
+  .login-card {
+    padding: 1.5rem !important;
+    margin: 2rem auto !important;
+  }
+}
+
+/* =========================================
+   NEW RESPONSIVE REFACTOR CLASSES
+   ========================================= */
+
+.header-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filters-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  flex-wrap: wrap;
+  /* Allow wrapping on small screens */
+}
+
+.date-input {
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  font-size: 0.875rem;
+  color-scheme: dark;
+  max-width: 130px;
+  /* Prevent date inputs from being too wide */
+}
+
+.filter-select {
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  font-size: 0.875rem;
+  outline: none;
+  cursor: pointer;
+  max-width: 150px;
+}
+
+.db-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  white-space: nowrap;
+  /* Prevent breaking */
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.history-table-container {
+  overflow-x: auto;
+  /* Enable horizontal scroll */
+  -webkit-overflow-scrolling: touch;
+  /* Smooth scroll on iOS */
+  margin-top: 1.5rem;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  color: #94a3b8;
+  min-width: 600px;
+  /* Force scroll if smaller */
+}
+
+/* MOBILE OVERRIDES */
+@media (max-width: 768px) {
+  .header-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .filters-container {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    margin-top: 1rem;
+  }
+
+  .filters-container input,
+  .filters-container select,
+  .menu-btn,
+  .menu-btn-link,
+  .filter-btn {
+    width: 100%;
+    /* Full width inputs on mobile */
+    max-width: none;
+    margin: 0.25rem 0;
+  }
+
+  /* Hide the separator line on mobile */
+  .filter-separator {
+    display: none;
+  }
+
+  .db-status-badge {
+    justify-content: center;
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+    padding: 0 1rem;
+  }
+
+  /* Make stat cards smaller font on mobile */
+  .stat-value {
+    font-size: 1.75rem;
+  }
+}
+
+/* ADMIN MODAL */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background: #1e293b;
+  padding: 2rem;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-height: 90vh;
+  overflow-y: auto;
+}

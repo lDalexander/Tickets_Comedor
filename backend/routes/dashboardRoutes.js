@@ -42,13 +42,13 @@ router.get('/stats/summary', async (req, res) => {
 
         // 1. Total Lunches
         const lunchesRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA')`,
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA')`,
             params
         );
 
-        // 2. Special Tickets (Dieta + Extra + Gerencia)
+        // 2. Special Tickets (Dieta + Extra + Gerencia + Visita)
         const specialRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA')`,
+            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA')`,
             params
         );
 
@@ -91,9 +91,9 @@ router.get('/stats/daily', async (req, res) => {
         const sql = `
             SELECT 
                 DATE(fecha) as date,
-                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA') THEN 1 ELSE 0 END) as lunches,
+                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA') THEN 1 ELSE 0 END) as lunches,
                 SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'TICKET ALMUERZO') THEN 1 ELSE 0 END) as type_normal,
-                SUM(CASE WHEN descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA') THEN 1 ELSE 0 END) as type_special
+                SUM(CASE WHEN descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA') THEN 1 ELSE 0 END) as type_special
             FROM registros 
             WHERE ${dateCondition}
             GROUP BY DATE(fecha)
@@ -134,8 +134,8 @@ router.get('/stats/history', async (req, res) => {
             else if (type === 'normal') conditions.push(`descripcion = 'TICKET ALMUERZO'`);
         } else {
             // Default: Show unique tickets (Hide duplicates)
-            // Fix: Include DIETA and GERENCIA, and use Uppercase to match DB
-            conditions.push(`descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta')`);
+            // Fix: Include DIETA, GERENCIA, and VISITA
+            conditions.push(`descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA', 'Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta')`);
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

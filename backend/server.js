@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
@@ -6,6 +7,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const fs = require('fs');
 const path = require('path');
 
+// Cargar variables de entorno desde .env
 dotenv.config();
 
 const app = express();
@@ -13,41 +15,56 @@ const server = require('http').createServer(app);
 
 const PORT = process.env.PORT || 5000;
 
-// Ensure logs directory exists
+// --- CONFIGURACIÓN DE LOGS ---
+// Asegurar que exista la carpeta de logs
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
     fs.mkdirSync(logsDir);
 }
 
-const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173'];
-
+// --- CONFIGURACIÓN DE SOCKET.IO (TIEMPO REAL) ---
+// Permite la comunicación bidireccional para el "Live Terminal" del Dashboard
 const io = require('socket.io')(server, {
     cors: {
-        origin: "*", // Allow all origins for local network access
+        origin: "*", // Permitir acceso desde cualquier origen en red local
         methods: ["GET", "POST"]
     }
 });
 
+// --- MIDDLEWARES ---
+// CORS: Permite peticiones desde otros dominios/puertos
 app.use(cors({
-    origin: "*", // Allow all origins
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+// JSON Parser: Permite recibir datos en formato JSON en requests POST/PUT
 app.use(express.json());
 
+// Health Check Endpoint
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date() });
+});
+
+// Logger de Peticiones: Registra cada entrada al servidor
 app.use((req, res, next) => {
     logger.info(`Incoming request: ${req.method} ${req.url}`);
     next();
 });
 
-app.use('/api/admin', require('./routes/adminRoutes'));
-app.use('/api', dashboardRoutes);
+// --- RUTAS (ENDPOINTS) ---
+app.use('/api/admin', require('./routes/adminRoutes')); // Rutas protegidas del Panel Admin
+app.use('/api/manual-tickets', require('./routes/manualTicketRoutes')); // Módulo de Tickets Manuales
+app.use('/api/config', require('./routes/configRoutes')); // Configuración del Sistema
+app.use('/api', dashboardRoutes); // Rutas públicas del Dashboard
 
-// Database Polling for Real-Time Events
+// Base de Datos (MySql)
 const db = require('./db');
 
-// --- MEAL SELECTION ROUTES ---
+// --- RUTAS DE SELECCIÓN DE MENÚ (DIETA/NORMAL) ---
 
+// Obtener información de usuario por ID (ZK ID)
 app.get('/api/users/:id', async (req, res) => {
     try {
         const rows = await db.query('SELECT nombre_completo, role, tipo_menu_predeterminado FROM usuarios WHERE zk_id = ?', [req.params.id]);
@@ -67,15 +84,15 @@ app.get('/api/users/:id', async (req, res) => {
     }
 });
 
+// Actualizar preferencias de usuario (Rol y Menú por defecto)
 app.put('/api/users/:id/preferences', async (req, res) => {
     const { role, defaultMenuType } = req.body;
     try {
-        // Only update allowed fields
         await db.query('UPDATE usuarios SET role = ?, tipo_menu_predeterminado = ? WHERE zk_id = ?',
             [role, defaultMenuType, req.params.id]
         );
 
-        // Emit log event for preference change
+        // Notificar al Dashboard en tiempo real
         io.emit('new_log', {
             type: 'WEB',
             message: `Preferencias actualizadas (ID: ${req.params.id}) -> Rol: ${role}, Menú: ${defaultMenuType}`,
@@ -89,12 +106,12 @@ app.put('/api/users/:id/preferences', async (req, res) => {
     }
 });
 
+// Busqueda de usuarios para autocompletado
 app.get('/api/search/users', async (req, res) => {
     try {
         const { q } = req.query;
         if (!q) return res.json([]);
 
-        // Search by ID or Name
         const query = `
             SELECT zk_id, nombre_completo 
             FROM usuarios 
@@ -110,8 +127,10 @@ app.get('/api/search/users', async (req, res) => {
     }
 });
 
+// Obtener menú semanal seleccionado por un usuario
 app.get('/api/menu/:userId', async (req, res) => {
     try {
+        // YEARWEEK verifica que sea de la semana actual
         const rows = await db.query(
             'SELECT * FROM menu_diario WHERE user_id = ? AND YEARWEEK(fecha, 1) = YEARWEEK(CURDATE(), 1)',
             [req.params.userId]
@@ -123,6 +142,7 @@ app.get('/api/menu/:userId', async (req, res) => {
     }
 });
 
+// Guardar selección de menú
 app.post('/api/menu', async (req, res) => {
     const { userId, selections } = req.body;
     if (!userId || !selections) return res.status(400).json({ error: 'Missing data' });
@@ -132,6 +152,7 @@ app.post('/api/menu', async (req, res) => {
         connection = await db.pool.promise().getConnection();
         await connection.beginTransaction();
         for (const item of selections) {
+            // Verificar si ya existe selección para ese día
             const [exists] = await connection.query(
                 'SELECT id FROM menu_diario WHERE user_id = ? AND fecha = ?',
                 [userId, item.date]
@@ -146,7 +167,6 @@ app.post('/api/menu', async (req, res) => {
         }
         await connection.commit();
 
-        // Emit log event for menu change
         io.emit('new_log', {
             type: 'WEB',
             message: `Menú actualizado para usuario ID: ${userId}`,
@@ -162,12 +182,44 @@ app.post('/api/menu', async (req, res) => {
         if (connection) connection.release();
     }
 });
+
+// --- ENDPOINT: OBTENER LOGS DEL DÍA (Persistencia Terminal) ---
+app.get('/api/logs/today', async (req, res) => {
+    try {
+        const rows = await db.query(
+            "SELECT nombre, descripcion, hora, id FROM registros WHERE fecha = CURDATE() ORDER BY id ASC"
+        );
+
+        const logs = rows.map(r => {
+            const isDuplicate = r.descripcion === 'Intento de Duplicado';
+            const type = isDuplicate ? 'ALERTA' : 'TICKET';
+            const status = isDuplicate ? 'error' : 'success';
+            return {
+                id: r.id,
+                timestamp: r.hora, // Ya viene como string HH:MM:SS
+                type: type,
+                message: `${r.nombre} - ${r.descripcion}`,
+                status: status
+            };
+        });
+
+        res.json(logs);
+    } catch (error) {
+        logger.error('Error fetching daily logs:', error);
+        res.status(500).json([]);
+    }
+});
+
+// --- POLLING DE EVENTOS EN TIEMPO REAL ---
+// El backend consulta la BD cada 2 segundos para ver si Python insertó nuevos registros
+// y los envía via Socket.IO al Frontend.
+
 let lastProcessedId = 0;
 
 async function checkNewRecords() {
     try {
         if (lastProcessedId === 0) {
-            // First run: get the max ID
+            // Primera ejecución: obtener el último ID actual para no repetir históricos
             const rows = await db.query("SELECT MAX(id) as maxId FROM registros");
             lastProcessedId = rows[0].maxId || 0;
             return;
@@ -184,6 +236,7 @@ async function checkNewRecords() {
                 const status = isDuplicate ? 'error' : 'success';
                 const type = isDuplicate ? 'ALERTA' : 'TICKET';
 
+                // Emitir evento al frontend
                 io.emit('new_log', {
                     type: type,
                     message: `${record.nombre} - ${record.descripcion}`,
@@ -198,10 +251,10 @@ async function checkNewRecords() {
     }
 }
 
-// Poll every 2 seconds
+// Ejecutar polling cada 2000ms (2 segundos)
 setInterval(checkNewRecords, 2000);
 
-// Global Error Handler
+// --- MANEJO DE ERRORES GLOBAL ---
 app.use((err, req, res, next) => {
     logger.error('Unhandled Error', err);
     res.status(500).json({ error: 'Something went wrong!' });
@@ -212,7 +265,7 @@ server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-// Keep process alive hack
+// Hack para mantener proceso vivo si algo falla (Prevent crash loop)
 setInterval(() => { }, 1000);
 
 // Debugging: Log why the process is exiting
@@ -224,7 +277,6 @@ process.on('exit', (code) => {
 process.on('uncaughtException', (err) => {
     logger.error('Uncaught Exception:', err);
     console.error('Uncaught Exception:', err);
-    // Keep it alive for now to see logs
 });
 
 process.on('unhandledRejection', (reason, promise) => {

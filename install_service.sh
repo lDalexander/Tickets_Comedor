@@ -18,6 +18,8 @@ systemctl disable comedor.service 2>/dev/null
 cp comedor-backend.service /etc/systemd/system/
 cp comedor-worker.service /etc/systemd/system/
 cp comedor-frontend.service /etc/systemd/system/
+cp comedor-maintenance.service /etc/systemd/system/
+cp comedor-maintenance.timer /etc/systemd/system/
 echo "✅ Service files copied."
 
 # 3. Reload daemon
@@ -27,10 +29,12 @@ systemctl daemon-reload
 systemctl enable comedor-backend.service
 systemctl enable comedor-worker.service
 systemctl enable comedor-frontend.service
+systemctl enable comedor-maintenance.timer
 
 systemctl restart comedor-backend.service
 systemctl restart comedor-worker.service
 systemctl restart comedor-frontend.service
+systemctl start comedor-maintenance.timer
 
 echo "✅ Services started!"
 

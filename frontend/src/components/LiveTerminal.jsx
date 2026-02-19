@@ -9,6 +9,23 @@ const LiveTerminal = () => {
     const socketRef = useRef(null);
 
     useEffect(() => {
+        // Cargar logs históricos del día al iniciar
+        const fetchDailyLogs = async () => {
+            try {
+                // Use relative path (proxy handles forwarding to port 5001/5000)
+                const response = await fetch('/api/logs/today');
+                if (response.ok) {
+                    const data = await response.json();
+                    // Transformar si es necesario, pero el backend ya lo manda formateado
+                    setLogs(data);
+                }
+            } catch (e) {
+                console.error("Error fetching daily logs", e);
+            }
+        };
+
+        fetchDailyLogs();
+
         // Initialize socket connection
         // Connect to current origin (proxy forwards /socket.io)
         socketRef.current = io();
@@ -24,7 +41,15 @@ const LiveTerminal = () => {
         });
 
         socketRef.current.on('new_log', (data) => {
-            addLog(data.type, data.message, data.status);
+            // Evitar duplicados si el socket manda algo que ya cargamos (poco probable por la lógica de ID, pero bueno)
+            setLogs(prev => {
+                // Si ya existe un log con el mismo mensaje y timestamp reciente, ignorar? 
+                // Mejor simplemente agregar, el usuario quiere ver "todo".
+                // Mantenemos solo los ultimos 100 para no explotar memoria
+                const newLogs = [...prev, { id: Date.now(), timestamp: new Date().toLocaleTimeString(), ...data }];
+                if (newLogs.length > 100) return newLogs.slice(-100);
+                return newLogs;
+            });
         });
 
         return () => {
@@ -34,7 +59,12 @@ const LiveTerminal = () => {
 
     const addLog = (type, message, status = 'info') => {
         const timestamp = new Date().toLocaleTimeString();
-        setLogs(prev => [...prev.slice(-49), { id: Date.now(), timestamp, type, message, status }]);
+        setLogs(prev => {
+            const newLog = { id: Date.now(), timestamp, type, message, status };
+            const newLogs = [...prev, newLog];
+            if (newLogs.length > 100) return newLogs.slice(-100);
+            return newLogs;
+        });
     };
 
     // Auto-scroll
