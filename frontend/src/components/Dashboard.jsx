@@ -1,5 +1,6 @@
 // components/Dashboard.jsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
+import useSWR from 'swr';
 import axios from 'axios';
 import StatCard from './StatCard';
 import { DailyTrendChart, LunchTypeChart } from './Charts';
@@ -7,12 +8,9 @@ import LiveTerminal from './LiveTerminal';
 import ManualTicketModal from './ManualTicketModal';
 import { Utensils, Ticket, AlertTriangle, Users, Database, Calendar } from 'lucide-react';
 
+const fetcher = url => axios.get(url).then(res => res.data);
+
 const Dashboard = () => {
-    const [summary, setSummary] = useState(null);
-    const [dailyData, setDailyData] = useState([]);
-    const [historyLog, setHistoryLog] = useState([]);
-    const [dbStatus, setDbStatus] = useState('checking'); // 'online', 'offline', 'checking'
-    const [loading, setLoading] = useState(true);
     const [showManualModal, setShowManualModal] = useState(false);
 
     // Filter State
@@ -31,49 +29,25 @@ const Dashboard = () => {
         setTypeFilter(e.target.value);
     };
 
-    const fetchData = useCallback(async () => {
-        try {
-            // In production, use env variable used in Vite: import.meta.env.VITE_API_URL
-            // Use relative path for proxy
-            const baseUrl = '/api';
+    // Build query params
+    const params = new URLSearchParams();
+    if (dateRange.start) params.append('startDate', dateRange.start);
+    if (dateRange.end) params.append('endDate', dateRange.end);
+    if (typeFilter) params.append('type', typeFilter);
 
-            // Build query params
-            const params = {};
-            if (dateRange.start) params.startDate = dateRange.start;
-            if (dateRange.end) params.endDate = dateRange.end;
-            if (typeFilter) params.type = typeFilter;
+    const queryString = params.toString() ? `?${params.toString()}` : '';
 
-            setLoading(true); // show loading state on manual filter
-            const [summaryRes, dailyRes, historyRes, healthRes] = await Promise.all([
-                axios.get(`${baseUrl}/stats/summary`, { params }),
-                axios.get(`${baseUrl}/stats/daily`, { params }),
-                axios.get(`${baseUrl}/stats/history`, { params }),
-                axios.get(`${baseUrl}/health`).catch(() => ({ data: { status: 'offline' } }))
-            ]);
+    const { data: summary, isLoading: isLoadingSummary } = useSWR(`/api/stats/summary${queryString}`, fetcher, { refreshInterval: 30000 });
+    const { data: dailyData, isLoading: isLoadingDaily } = useSWR(`/api/stats/daily${queryString}`, fetcher, { refreshInterval: 30000 });
+    const { data: historyLog, isLoading: isLoadingHistory } = useSWR(`/api/stats/history${queryString}`, fetcher, { refreshInterval: 30000 });
+    const { data: healthRes, error: healthError } = useSWR(`/api/health`, fetcher, { refreshInterval: 30000, errorRetryCount: 1 });
 
-            setSummary(summaryRes.data);
-            setDailyData(dailyRes.data);
-            setHistoryLog(historyRes.data);
-            setDbStatus(healthRes.data.status);
-            setLoading(false);
-        } catch (error) {
-            console.error("Error loading dashboard data", error);
-            setLoading(false);
-        }
-    }, [dateRange, typeFilter]);
+    const dbStatus = healthError ? 'offline' : (healthRes?.status || 'checking');
+    const loading = isLoadingSummary || isLoadingDaily || isLoadingHistory;
 
-    // Initial load
-    useEffect(() => {
-        fetchData();
-        // Set up polling every 30 seconds
-        const interval = setInterval(fetchData, 30000);
-        return () => clearInterval(interval);
-    }, [fetchData]); // Empty dependency array - only runs on mount
-
-    // Manual refresh handler
-    const handleFilter = () => {
-        fetchData();
-    };
+    // Manual refresh handler (no-op since SWR auto-updates with params, but keep for UI compatibility if needed)
+    // SWR updates automatically when `queryString` changes.
+    const handleFilter = () => { };
 
     // Download Handler
     const handleDownload = () => {
@@ -106,9 +80,12 @@ const Dashboard = () => {
     if (loading && !summary) return <div className="page-header" style={{ textAlign: 'center' }}>Cargando datos...</div>;
 
     // Aggregate daily data for today for doughnut chart if not provided by summary
-    const todayTypeData = dailyData.length > 0 ? {
-        type_normal: dailyData.reduce((acc, curr) => acc + (parseInt(curr.type_normal) || 0), 0),
-        type_special: dailyData.reduce((acc, curr) => acc + (parseInt(curr.type_special) || 0), 0)
+    const safeDailyData = dailyData || [];
+    const safeHistoryLog = historyLog || [];
+
+    const todayTypeData = safeDailyData.length > 0 ? {
+        type_normal: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_normal) || 0), 0),
+        type_special: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_special) || 0), 0)
     } : { type_normal: 0, type_special: 0 };
 
     return (
@@ -130,40 +107,29 @@ const Dashboard = () => {
 
                     {/* Filters */}
                     <div className="filters-container">
-                        <Calendar size={16} color="#94a3b8" style={{ minWidth: '16px' }} />
-                        <input
-                            type="date"
-                            name="start"
-                            value={dateRange.start}
-                            onChange={handleDateChange}
-                            className="date-input"
-                        />
-                        <span style={{ color: '#94a3b8' }}>a</span>
-                        <input
-                            type="date"
-                            name="end"
-                            value={dateRange.end}
-                            onChange={handleDateChange}
-                            className="date-input"
-                        />
+                        <div className="date-group">
+                            <Calendar size={16} color="#94a3b8" className="calendar-icon" />
+                            <input
+                                type="date"
+                                name="start"
+                                value={dateRange.start}
+                                onChange={handleDateChange}
+                                className="date-input"
+                            />
+                            <span className="date-separator">a</span>
+                            <input
+                                type="date"
+                                name="end"
+                                value={dateRange.end}
+                                onChange={handleDateChange}
+                                className="date-input"
+                            />
+                        </div>
 
+                        <div className="filter-separator"></div>
 
-                        <div className="filter-separator" style={{ width: '1px', height: '20px', background: 'var(--glass-border)', margin: '0 0.5rem' }}></div>
-
-                        <a href="/seleccion" target="_blank" style={{ textDecoration: 'none' }} className="menu-btn-link">
-                            <button style={{
-                                background: '#8b5cf6',
-                                border: 'none',
-                                borderRadius: '4px',
-                                color: 'white',
-                                padding: '0.25rem 0.75rem',
-                                cursor: 'pointer',
-                                fontSize: '0.875rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '0.5rem'
-                            }} className="menu-btn">
+                        <a href="/seleccion" target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }} className="menu-btn-link">
+                            <button className="menu-btn">
                                 <Utensils size={14} /> Menú Semanal
                             </button>
                         </a>
@@ -238,7 +204,7 @@ const Dashboard = () => {
             <div className="charts-grid">
                 <div className="card">
                     <h3 className="stat-label">Tendencia ({dateRange.start ? 'Personalizada' : 'Ultimos 7 dias'})</h3>
-                    <DailyTrendChart data={dailyData} />
+                    <DailyTrendChart data={safeDailyData} />
                 </div>
                 <div className="card">
                     <h3 className="stat-label">Distribución ({dateRange.start ? 'Rango' : 'Ultimos 7 dias'})</h3>
@@ -282,7 +248,7 @@ const Dashboard = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {historyLog.map(item => (
+                            {safeHistoryLog.map(item => (
                                 <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                     <td style={{ padding: '1rem' }}>{item.numero_ticket || '-'}</td>
                                     <td style={{ padding: '1rem', color: '#f1f5f9' }}>{item.user}</td>

@@ -155,11 +155,10 @@ router.post('/print', async (req, res) => {
 
         // 2. Calcular número de ticket (Lógica idéntica a Python para llenar huecos)
         const today = new Date();
-        // Ajuste manual de zona horaria si es necesario, o confiar en que el servidor tiene la hora correcta.
-        // Simulamos la fecha local YYYY-MM-DD
-        const offset = today.getTimezoneOffset() * 60000; // offset en milisegundos
-        const localDate = new Date(today.getTime() - offset);
-        const fechaStr = localDate.toISOString().split('T')[0];
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const fechaStr = `${year}-${month}-${day}`;
 
         // Consultar números usados hoy
         const usedRows = await db.query(
@@ -189,7 +188,7 @@ router.post('/print', async (req, res) => {
         // 4. Insertar en tabla PRINCIPAL `registros`
         // Usamos un ID ficticio para evitar colisión con ZK IDs numéricos. Ej: "VISITA_{timestamp}"
         const fakeUserId = `VISITA_${Date.now()}`;
-        const horaStr = localDate.toTimeString().split(' ')[0];
+        const horaStr = today.toTimeString().split(' ')[0];
 
         await db.query(
             'INSERT INTO registros (user_id, nombre, fecha, hora, descripcion, numero_ticket) VALUES (?, ?, ?, ?, ?, ?)',

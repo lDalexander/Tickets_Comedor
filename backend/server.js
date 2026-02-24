@@ -44,7 +44,7 @@ app.use(express.json());
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'ok', timestamp: new Date() });
+    res.status(200).json({ status: 'online', timestamp: new Date() });
 });
 
 // Logger de Peticiones: Registra cada entrada al servidor

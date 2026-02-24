@@ -24,38 +24,178 @@ const getEcuadorTime = () => {
     return { dateStr, hour, dateObj };
 };
 
-// Logic to get current week's dates (Mon-Fri) based on Ecuador Time
 const getWeekDates = () => {
-    const { dateObj } = getEcuadorTime();
-    const curr = new Date(dateObj); // Clone
-    const week = [];
-    // Adjust to Monday
-    const day = curr.getDay(); // 0-6
-    const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
+    // Return array of next 5 weekdays skipping weekends
+    // Standard implementation
+    const dates = [];
+    let current = new Date();
 
-    for (let i = 0; i < 5; i++) {
-        const d = new Date(curr);
-        d.setDate(diff + i);
-        // Use local formatting since 'd' is already aligned to Ecuador day boundaries conceptually
-        // Actually, we need to format 'd' as YYYY-MM-DD
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const dayNum = String(d.getDate()).padStart(2, '0');
-        const dateStr = `${y}-${m}-${dayNum}`;
+    // Convert to Ecuador time (UTC-5)
+    current.setHours(current.getHours() - 5);
 
-        week.push({
-            date: dateStr,
-            dayName: new Intl.DateTimeFormat('es-ES', { weekday: 'long' }).format(d),
-            displayDate: new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long' }).format(d)
-        });
+    // Add logic to get next 5 days
+    // Skip today if it's past 14:00 EC time
+    if (current.getHours() >= 14) {
+        current.setDate(current.getDate() + 1);
     }
-    return week;
+
+    while (dates.length < 5) {
+        const day = current.getDay();
+        if (day !== 0 && day !== 6) { // Skip Sunday and Saturday
+            const iso = new Date(current.getTime() - (current.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+            dates.push({
+                date: iso,
+                dayName: new Intl.DateTimeFormat('es-EC', { weekday: 'long' }).format(current),
+                displayDate: new Intl.DateTimeFormat('es-EC', { month: 'short', day: 'numeric' }).format(current)
+            });
+        }
+        current.setDate(current.getDate() + 1);
+    }
+    return dates;
 };
 
+// Extracted and Memoized DayCard component
+const DayCard = React.memo(({ d, selected, option, isLocked, isPast, isLate, onToggle, onSetOption }) => {
+    return (
+        <div className="card day-card" style={{
+            border: selected ? '1px solid #3b82f6' : '1px solid transparent',
+            background: isLocked ? 'rgba(30, 41, 59, 0.5)' : (selected ? 'rgba(59, 130, 246, 0.05)' : '#1e293b'),
+            opacity: isLocked ? 0.6 : 1,
+            pointerEvents: isLocked ? 'none' : 'auto',
+        }}>
+            {isLocked && (
+                <div className="day-status">
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{isPast ? 'Cerrado' : (isLate ? 'Hora límite excedida' : 'Confirmado')}</span>
+                    <span style={{ fontSize: '1rem' }}>🔒</span>
+                </div>
+            )}
+            <div className="day-content">
+                <div
+                    onClick={() => onToggle(d.date)}
+                    style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '6px',
+                        border: selected ? 'none' : '2px solid #475569',
+                        background: selected ? '#3b82f6' : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: isLocked ? 'not-allowed' : 'pointer',
+                        flexShrink: 0
+                    }}
+                >
+                    {selected && <Check size={16} color="white" />}
+                </div>
+                <div>
+                    <h3 style={{ textTransform: 'capitalize', fontSize: '1.1rem' }}>{d.dayName}</h3>
+                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>{d.displayDate}</span>
+                </div>
+            </div>
 
-// ... existing imports ...
+            {selected && (
+                <div className="day-actions">
+                    <button
+                        onClick={() => onSetOption(d.date, 1)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '6px',
+                            border: 'none',
+                            background: option === 1 ? '#3b82f6' : 'transparent',
+                            color: option === 1 ? 'white' : '#94a3b8',
+                            cursor: 'pointer',
+                            fontWeight: '500'
+                        }}
+                    >
+                        <Utensils size={16} /> Normal
+                    </button>
+                    <button
+                        onClick={() => onSetOption(d.date, 2)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '6px',
+                            border: 'none',
+                            background: option === 2 ? '#f472b6' : 'transparent',
+                            color: option === 2 ? 'white' : '#94a3b8',
+                            cursor: 'pointer',
+                            fontWeight: '500'
+                        }}
+                    >
+                        <Salad size={16} /> Dieta
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+});
 
-// ... helper functions (getEcuadorTime, getWeekDates) ...
+// Extracted and Memoized OperativoView component
+const OperativoView = React.memo(({ defaultMenuType, onDefaultMenuChange }) => {
+    return (
+        <div className="card" style={{ padding: '2rem', textAlign: 'center', background: '#1e293b', borderRadius: '8px', border: defaultMenuType === 'Dieta' ? '2px solid #f472b6' : '1px solid #334155' }}>
+            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <Utensils size={20} color={defaultMenuType === 'Dieta' ? '#f472b6' : '#94a3b8'} />
+                Preferencia Predeterminada
+            </h3>
+
+            <div
+                onClick={() => onDefaultMenuChange({ target: { checked: defaultMenuType !== 'Dieta' } })}
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '1rem',
+                    cursor: 'pointer',
+                    background: '#0f172a',
+                    padding: '1rem',
+                    borderRadius: '12px',
+                    margin: '0 auto',
+                    maxWidth: '300px'
+                }}
+            >
+                <span style={{ color: defaultMenuType === 'Normal' ? '#3b82f6' : '#64748b', fontWeight: 'bold' }}>NORMAL</span>
+
+                <div style={{
+                    width: '60px',
+                    height: '32px',
+                    background: defaultMenuType === 'Dieta' ? '#f472b6' : '#334155',
+                    borderRadius: '999px',
+                    position: 'relative',
+                    transition: 'background 0.3s'
+                }}>
+                    <div style={{
+                        width: '26px',
+                        height: '26px',
+                        background: 'white',
+                        borderRadius: '50%',
+                        position: 'absolute',
+                        top: '3px',
+                        left: defaultMenuType === 'Dieta' ? '31px' : '3px',
+                        transition: 'left 0.3s',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }} />
+                </div>
+
+                <span style={{ color: defaultMenuType === 'Dieta' ? '#f472b6' : '#64748b', fontWeight: 'bold' }}>DIETA</span>
+            </div>
+
+            <div style={{ marginTop: '1.5rem', color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6' }}>
+                <p style={{ marginBottom: '0.5rem' }}>
+                    <strong style={{ color: '#e2e8f0' }}>¿Cómo funciona?</strong>
+                </p>
+                <p>
+                    Al activar esta opción, el sistema imprimirá automáticamente un ticket de
+                    <strong style={{ color: '#f472b6' }}> DIETA</strong> cada vez que marques asistencia.
+                </p>
+                <p style={{ fontSize: '0.85rem', marginTop: '0.5rem', fontStyle: 'italic' }}>
+                    (Esta configuración se mantiene guardada hasta que decidas cambiarla).
+                </p>
+            </div>
+        </div>
+    );
+});
 
 const MenuSelection = () => {
     const [userId, setUserId] = useState('');
@@ -148,7 +288,7 @@ const MenuSelection = () => {
         }
     };
 
-    const toggleDay = (date) => {
+    const toggleDay = React.useCallback((date) => {
         setSelections(prev => {
             if (prev[date]) {
                 const next = { ...prev };
@@ -157,11 +297,11 @@ const MenuSelection = () => {
             }
             return { ...prev, [date]: 1 };
         });
-    };
+    }, []);
 
-    const setOption = (date, option) => {
+    const setOption = React.useCallback((date, option) => {
         setSelections(prev => ({ ...prev, [date]: option }));
-    };
+    }, []);
 
     const handleRoleChange = async (newRole) => {
         setRole(newRole);
@@ -356,67 +496,10 @@ const MenuSelection = () => {
 
                     {/* CONDITIONAL CONTENT */}
                     {role === 'Operativo' ? (
-                        <div className="card" style={{ padding: '2rem', textAlign: 'center', background: '#1e293b', borderRadius: '8px', border: defaultMenuType === 'Dieta' ? '2px solid #f472b6' : '1px solid #334155' }}>
-                            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                                <Utensils size={20} color={defaultMenuType === 'Dieta' ? '#f472b6' : '#94a3b8'} />
-                                Preferencia Predeterminada
-                            </h3>
-
-                            <div
-                                onClick={() => handleDefaultMenuChange({ target: { checked: defaultMenuType !== 'Dieta' } })}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '1rem',
-                                    cursor: 'pointer',
-                                    background: '#0f172a',
-                                    padding: '1rem',
-                                    borderRadius: '12px',
-                                    margin: '0 auto',
-                                    maxWidth: '300px'
-                                }}
-                            >
-                                <span style={{ color: defaultMenuType === 'Normal' ? '#3b82f6' : '#64748b', fontWeight: 'bold' }}>NORMAL</span>
-
-                                {/* Toggle Switch UI */}
-                                <div style={{
-                                    width: '60px',
-                                    height: '32px',
-                                    background: defaultMenuType === 'Dieta' ? '#f472b6' : '#334155',
-                                    borderRadius: '999px',
-                                    position: 'relative',
-                                    transition: 'background 0.3s'
-                                }}>
-                                    <div style={{
-                                        width: '26px',
-                                        height: '26px',
-                                        background: 'white',
-                                        borderRadius: '50%',
-                                        position: 'absolute',
-                                        top: '3px',
-                                        left: defaultMenuType === 'Dieta' ? '31px' : '3px',
-                                        transition: 'left 0.3s',
-                                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                                    }} />
-                                </div>
-
-                                <span style={{ color: defaultMenuType === 'Dieta' ? '#f472b6' : '#64748b', fontWeight: 'bold' }}>DIETA</span>
-                            </div>
-
-                            <div style={{ marginTop: '1.5rem', color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6' }}>
-                                <p style={{ marginBottom: '0.5rem' }}>
-                                    <strong style={{ color: '#e2e8f0' }}>¿Cómo funciona?</strong>
-                                </p>
-                                <p>
-                                    Al activar esta opción, el sistema imprimirá automáticamente un ticket de
-                                    <strong style={{ color: '#f472b6' }}> DIETA</strong> cada vez que marques asistencia.
-                                </p>
-                                <p style={{ fontSize: '0.85rem', marginTop: '0.5rem', fontStyle: 'italic' }}>
-                                    (Esta configuración se mantiene guardada hasta que decidas cambiarla).
-                                </p>
-                            </div>
-                        </div>
+                        <OperativoView
+                            defaultMenuType={defaultMenuType}
+                            onDefaultMenuChange={handleDefaultMenuChange}
+                        />
                     ) : (
                         // ADMIN VIEW (Existing Week Selector)
                         <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'minmax(0, 1fr)' }}>
@@ -436,77 +519,17 @@ const MenuSelection = () => {
                                 const isLocked = isPast || isLate || isSaved;
 
                                 return (
-                                    <div key={d.date} className="card day-card" style={{
-                                        border: selected ? '1px solid #3b82f6' : '1px solid transparent',
-                                        background: isLocked ? 'rgba(30, 41, 59, 0.5)' : (selected ? 'rgba(59, 130, 246, 0.05)' : '#1e293b'),
-                                        opacity: isLocked ? 0.6 : 1,
-                                        pointerEvents: isLocked ? 'none' : 'auto',
-                                    }}>
-                                        {isLocked && (
-                                            <div className="day-status">
-                                                <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{isPast ? 'Cerrado' : (isLate ? 'Hora límite excedida' : 'Confirmado')}</span>
-                                                <span style={{ fontSize: '1rem' }}>🔒</span>
-                                            </div>
-                                        )}
-                                        <div className="day-content">
-                                            <div
-                                                onClick={() => toggleDay(d.date)}
-                                                style={{
-                                                    width: '24px',
-                                                    height: '24px',
-                                                    borderRadius: '6px',
-                                                    border: selected ? 'none' : '2px solid #475569',
-                                                    background: selected ? '#3b82f6' : 'transparent',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    cursor: isLocked ? 'not-allowed' : 'pointer',
-                                                    flexShrink: 0
-                                                }}
-                                            >
-                                                {selected && <Check size={16} color="white" />}
-                                            </div>
-                                            <div>
-                                                <h3 style={{ textTransform: 'capitalize', fontSize: '1.1rem' }}>{d.dayName}</h3>
-                                                <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>{d.displayDate}</span>
-                                            </div>
-                                        </div>
-
-                                        {selected && (
-                                            <div className="day-actions">
-                                                <button
-                                                    onClick={() => setOption(d.date, 1)}
-                                                    style={{
-                                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                                        padding: '0.5rem 1rem',
-                                                        borderRadius: '6px',
-                                                        border: 'none',
-                                                        background: option === 1 ? '#3b82f6' : 'transparent',
-                                                        color: option === 1 ? 'white' : '#94a3b8',
-                                                        cursor: 'pointer',
-                                                        fontWeight: '500'
-                                                    }}
-                                                >
-                                                    <Utensils size={16} /> Normal
-                                                </button>
-                                                <button
-                                                    onClick={() => setOption(d.date, 2)}
-                                                    style={{
-                                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                                        padding: '0.5rem 1rem',
-                                                        borderRadius: '6px',
-                                                        border: 'none',
-                                                        background: option === 2 ? '#f472b6' : 'transparent',
-                                                        color: option === 2 ? 'white' : '#94a3b8',
-                                                        cursor: 'pointer',
-                                                        fontWeight: '500'
-                                                    }}
-                                                >
-                                                    <Salad size={16} /> Dieta
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
+                                    <DayCard
+                                        key={d.date}
+                                        d={d}
+                                        selected={selected}
+                                        option={option}
+                                        isLocked={isLocked}
+                                        isPast={isPast}
+                                        isLate={isLate}
+                                        onToggle={toggleDay}
+                                        onSetOption={setOption}
+                                    />
                                 );
                             })}
                         </div>

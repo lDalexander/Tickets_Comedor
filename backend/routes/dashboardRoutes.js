@@ -3,73 +3,12 @@ const router = express.Router();
 const db = require('../db');
 const logger = require('../utils/logger');
 const ExcelJS = require('exceljs');
-
-// Helper to build date filter
-const isValidDate = (dateString) => {
-    const regEx = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateString.match(regEx)) return false;  // Invalid format
-    const d = new Date(dateString);
-    const dNum = d.getTime();
-    if (!dNum && dNum !== 0) return false; // NaN value, invalid date
-    return d.toISOString().slice(0, 10) === dateString;
-}
-
-const getDateFilter = (req, fieldName = 'fecha') => {
-    const { startDate, endDate } = req.query;
-    let sql = ` ${fieldName} = CURDATE() `; // Default: Today
-    let params = [];
-
-    if (startDate && endDate) {
-        if (!isValidDate(startDate) || !isValidDate(endDate)) {
-            // Fallback or error. For now fallback to today to avoid SQL error or injection attempts via weird formats
-            logger.warn('Invalid date format detected, falling back to CURDATE');
-            return { sql: ` ${fieldName} = CURDATE() `, params: [] };
-        }
-        sql = ` ${fieldName} BETWEEN ? AND ? `;
-        params = [startDate, endDate];
-    } else if (req.path.includes('/daily')) {
-        // Default for daily trend: Last 7 days
-        sql = ` ${fieldName} >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) `;
-        params = [];
-    }
-
-    return { sql, params };
-};
+const statsRepository = require('../repositories/statsRepository');
 
 router.get('/stats/summary', async (req, res) => {
     try {
-        const { sql: dateCondition, params } = getDateFilter(req);
-
-        // 1. Total Lunches
-        const lunchesRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA')`,
-            params
-        );
-
-        // 2. Special Tickets (Dieta + Extra + Gerencia + Visita)
-        const specialRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA')`,
-            params
-        );
-
-        // 3. Normal Tickets (Ticket Almuerzo)
-        const normalRows = await db.query(
-            `SELECT COUNT(*) as total FROM registros WHERE ${dateCondition} AND descripcion IN ('Ticket Almuerzo', 'TICKET ALMUERZO')`,
-            params
-        );
-
-        // 4. Most Popular Type
-        const popRows = await db.query(
-            `SELECT descripcion, COUNT(*) as count FROM registros WHERE ${dateCondition} AND descripcion NOT IN ('INTENTO DE DUPLICADO', 'Intento de Duplicado') GROUP BY descripcion ORDER BY count DESC LIMIT 1`,
-            params
-        );
-
-        res.json({
-            totalLunches: lunchesRows[0]?.total || 0,
-            totalSpecial: specialRows[0]?.total || 0,
-            totalNormal: normalRows[0]?.total || 0,
-            mostPopularType: popRows[0]?.descripcion || 'N/A'
-        });
+        const stats = await statsRepository.getSummary(req);
+        res.json(stats);
         logger.info('Fetched summary stats from DB');
     } catch (error) {
         logger.error('Error fetching summary stats', error);
@@ -79,27 +18,7 @@ router.get('/stats/summary', async (req, res) => {
 
 router.get('/stats/daily', async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
-        let dateCondition = `fecha >= DATE_SUB(CURDATE(), INTERVAL 8 DAY)`;
-        let params = [];
-
-        if (startDate && endDate) {
-            dateCondition = `fecha BETWEEN ? AND ?`;
-            params = [startDate, endDate];
-        }
-
-        const sql = `
-            SELECT 
-                DATE(fecha) as date,
-                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta', 'TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA') THEN 1 ELSE 0 END) as lunches,
-                SUM(CASE WHEN descripcion IN ('Ticket Almuerzo', 'TICKET ALMUERZO') THEN 1 ELSE 0 END) as type_normal,
-                SUM(CASE WHEN descripcion IN ('Ticket Extra', 'Ticket Dieta', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA') THEN 1 ELSE 0 END) as type_special
-            FROM registros 
-            WHERE ${dateCondition}
-            GROUP BY DATE(fecha)
-            ORDER BY date ASC
-        `;
-        const rows = await db.query(sql, params);
+        const rows = await statsRepository.getDaily(req);
 
         const formattedRows = rows.map(r => ({
             ...r,
@@ -116,39 +35,7 @@ router.get('/stats/daily', async (req, res) => {
 
 router.get('/stats/history', async (req, res) => {
     try {
-        const { startDate, endDate, type } = req.query;
-        let conditions = [];
-        let params = [];
-
-        // Date Filter
-        if (startDate && endDate) {
-            conditions.push(`fecha BETWEEN ? AND ?`);
-            params.push(startDate, endDate);
-        } else {
-            conditions.push(`fecha = CURDATE()`); // Default: Today
-        }
-
-        // Type Filter
-        if (type) {
-            if (type === 'extra') conditions.push(`descripcion = 'TICKET EXTRA'`);
-            else if (type === 'normal') conditions.push(`descripcion = 'TICKET ALMUERZO'`);
-        } else {
-            // Default: Show unique tickets (Hide duplicates)
-            // Fix: Include DIETA, GERENCIA, and VISITA
-            conditions.push(`descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA', 'Ticket Almuerzo', 'Ticket Extra', 'Ticket Dieta')`);
-        }
-
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-        const sql = `
-            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type, numero_ticket 
-            FROM registros 
-            ${whereClause}
-            ORDER BY id DESC 
-            LIMIT 100
-        `;
-
-        const rows = await db.query(sql, params);
+        const rows = await statsRepository.getHistory(req);
 
         const formattedRows = rows.map(r => ({
             ...r,
@@ -174,33 +61,7 @@ router.get('/stats/export-excel', async (req, res) => {
             return res.status(400).send('Se requiere un rango de fechas para descargar el reporte.');
         }
 
-        let conditions = [];
-        let params = [];
-
-        // Date Filter
-        conditions.push(`fecha BETWEEN ? AND ?`);
-        params.push(startDate, endDate);
-
-        // Type Filter (matches history logic)
-        if (type) {
-            if (type === 'extra') conditions.push(`descripcion = 'TICKET EXTRA'`);
-            else if (type === 'normal') conditions.push(`descripcion = 'TICKET ALMUERZO'`);
-        } else {
-            // Default: Show ALL tickets except duplicates (Safe for new types)
-            conditions.push(`descripcion NOT IN ('INTENTO DE DUPLICADO', 'Intento de Duplicado')`);
-        }
-
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-        // Query without LIMIT for export
-        const sql = `
-            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type, numero_ticket 
-            FROM registros 
-            ${whereClause}
-            ORDER BY fecha DESC, hora DESC
-        `;
-
-        const rows = await db.query(sql, params);
+        const rows = await statsRepository.getExport(req);
 
         // Generate Workbook
         const workbook = new ExcelJS.Workbook();

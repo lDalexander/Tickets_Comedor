@@ -1,8 +1,11 @@
 
 import mysql.connector
+from mysql.connector import pooling
+from mysql.connector.connection import MySQLConnection
+from typing import Tuple, Dict, Optional, Any, List
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Cargar variables simulando el entorno si se ejecuta directo
@@ -14,25 +17,37 @@ class Database:
     Maneja conexiones, registros de eventos y sincronización de usuarios.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # --- CONFIGURACIÓN DE BASE DE DATOS ---
-        # Se cargan las variables de entorno definidas en el archivo .env
-        self.config = {
+        self.config: Dict[str, Any] = {
             'user': os.getenv('DB_USER', 'root'),
             'password': os.getenv('DB_PASSWORD', ''),
             'host': os.getenv('DB_HOST', 'localhost'),
             'database': os.getenv('DB_NAME', 'control_comedor'),
             'port': int(os.getenv('DB_PORT', 3306))
         }
+
+        # Initialize connection pool
+        try:
+            self.pool = mysql.connector.pooling.MySQLConnectionPool(
+                pool_name="comedor_pool",
+                pool_size=5,
+                pool_reset_session=True,
+                **self.config
+            )
+            logging.info("Connection pool 'comedor_pool' created successfully.")
+        except mysql.connector.Error as err:
+            logging.error(f"Error creating connection pool: {err}")
+            raise err
         
         # Identificadores especiales para lógica de negocio
         self.IDS_VIPS = ['14', '27']
         self.IDS_CON_ESPECIAL = ['16', '119', '120']
 
-    def get_connection(self):
+    def get_connection(self) -> MySQLConnection:
         """Establece y retorna una nueva conexión a MySQL."""
         try:
-            return mysql.connector.connect(**self.config)
+            return self.pool.get_connection()
         except mysql.connector.Error as err:
             logging.error(f"Error conectando a BD: {err}")
             raise err
@@ -72,7 +87,42 @@ class Database:
                 conn.close()
         return nombre_final
 
-    def registrar_evento(self, user_id, nombre):
+    def _verificar_menu(self, cursor: Any, user_id: str, fecha_hoy: datetime.date) -> bool:
+        """ Verifica si el usuario tiene asignada una dieta web hoy o por defecto. """
+        query_menu = "SELECT opcion FROM menu_diario WHERE user_id = %s AND fecha = %s"
+        cursor.execute(query_menu, (user_id, fecha_hoy))
+        menu_res = cursor.fetchone()
+
+        if menu_res and menu_res[0] == 2:
+            return True
+        elif not menu_res:
+            cursor.execute("SELECT tipo_menu_predeterminado FROM usuarios WHERE zk_id = %s", (user_id,))
+            user_pref = cursor.fetchone()
+            if user_pref and user_pref[0] == 'Dieta':
+                return True
+        return False
+
+    def _es_duplicado(self, cursor: Any, user_id: str, fecha_hoy: datetime.date) -> bool:
+        """ Retorna True si ya consumió almuerzo/dieta/gerencia en este día """
+        query_duplicado = "SELECT COUNT(*) FROM registros WHERE user_id = %s AND fecha = %s AND (descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA'))"
+        cursor.execute(query_duplicado, (user_id, fecha_hoy))
+        (conteo,) = cursor.fetchone()
+        return conteo > 0
+
+    def _get_siguiente_ticket(self, cursor: Any, fecha_hoy: datetime.date) -> int:
+        sql_used = "SELECT numero_ticket FROM registros WHERE fecha = %s AND descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA', 'TICKET VISITA') ORDER BY numero_ticket ASC"
+        cursor.execute(sql_used, (fecha_hoy,))
+        used_numbers = [row[0] for row in cursor.fetchall() if row[0] is not None]
+
+        ticket_number = 1
+        for n in used_numbers:
+            if n == ticket_number:
+                ticket_number += 1
+            elif n > ticket_number:
+                break # Hueco encontrado
+        return ticket_number
+
+    def registrar_evento(self, user_id: str, nombre: str) -> Tuple[str, int]:
         """
         Registra el evento de asistencia en la base de datos.
         Determina si es Almuerzo, Dieta, Extra o Duplicado.
@@ -80,42 +130,21 @@ class Database:
         """
         conn = None
         tipo_evento = "ERROR"
-        es_vip = str(user_id) in self.IDS_VIPS
+        user_id_str = str(user_id)
+        es_vip = user_id_str in self.IDS_VIPS
+        es_especial = user_id_str in self.IDS_CON_ESPECIAL
 
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # La base de datos ya está en hora local, no es necesario restar 5 horas si el servidor está en UTC
-            # Nota: Manteniendo la lógica corregida donde el servidor UTC necesita -5h para ser Local Ecuador
-            # Si el servidor ya está corregido a localtime, se usa datetime.now() directo.
-            # Según conversación anterior, el servidor está en UTC, por lo tanto RESTAMOS 5 horas para guardar la hora Local.
-            ahora = datetime.now() - timedelta(hours=5)
+            ahora = datetime.now()
             fecha_hoy = ahora.date()
 
-            # 1. Verificar si seleccionó menú en la Web
-            query_menu = "SELECT opcion FROM menu_diario WHERE user_id = %s AND fecha = %s"
-            cursor.execute(query_menu, (user_id, fecha_hoy))
-            menu_res = cursor.fetchone()
+            es_dieta_seleccion = self._verificar_menu(cursor, user_id_str, fecha_hoy)
+            ya_comio = self._es_duplicado(cursor, user_id_str, fecha_hoy)
 
-            es_dieta_seleccion = False
-            if menu_res and menu_res[0] == 2:
-                es_dieta_seleccion = True
-            elif not menu_res:
-                # Si no seleccionó hoy, ver si tiene preferencia por defecto
-                cursor.execute("SELECT tipo_menu_predeterminado FROM usuarios WHERE zk_id = %s", (user_id,))
-                user_pref = cursor.fetchone()
-                if user_pref and user_pref[0] == 'Dieta':
-                    es_dieta_seleccion = True
-
-            es_especial = str(user_id) in self.IDS_CON_ESPECIAL
-
-            # 2. Verificar duplicados (si ya comió hoy)
-            query_duplicado = "SELECT COUNT(*) FROM registros WHERE user_id = %s AND fecha = %s AND (descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA'))"
-            cursor.execute(query_duplicado, (user_id, fecha_hoy))
-            (conteo,) = cursor.fetchone()
-
-            if conteo == 0:
+            if not ya_comio:
                 if es_especial:
                     tipo_evento = "TICKET GERENCIA"
                 elif es_dieta_seleccion:
@@ -128,22 +157,11 @@ class Database:
                 else:
                     tipo_evento = "INTENTO DE DUPLICADO"
 
-            # 3. Obtener el siguiente número de ticket (rellenando huecos si existen)
-            sql_used = "SELECT numero_ticket FROM registros WHERE fecha = %s AND descripcion IN ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA') ORDER BY numero_ticket ASC"
-            cursor.execute(sql_used, (fecha_hoy,))
-            used_numbers = [row[0] for row in cursor.fetchall()]
-
-            ticket_number = 1
-            for n in used_numbers:
-                if n == ticket_number:
-                    ticket_number += 1
-                elif n > ticket_number:
-                    break # Hueco encontrado
+            ticket_number = self._get_siguiente_ticket(cursor, fecha_hoy)
             
             # 4. Insertar el registro
             sql_insert = "INSERT INTO registros (user_id, nombre, fecha, hora, descripcion, numero_ticket) VALUES (%s, %s, %s, %s, %s, %s)"
-            # Guardamos la hora Local calculada
-            val_insert = (user_id, nombre, fecha_hoy, ahora.time(), tipo_evento, ticket_number)
+            val_insert = (user_id_str, nombre, fecha_hoy, ahora.time(), tipo_evento, ticket_number)
             cursor.execute(sql_insert, val_insert)
             conn.commit()
             
@@ -171,7 +189,7 @@ class Database:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            fecha_hoy_str = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d')
+            fecha_hoy_str = datetime.now().strftime('%Y-%m-%d')
             
             # Consultar menú diario
             query = "SELECT opcion, sin_sopa, sin_arroz FROM menu_diario WHERE user_id = %s AND fecha = %s"
@@ -218,6 +236,7 @@ class Database:
                        (SELECT nombre FROM registros r2 WHERE r2.user_id = r.user_id ORDER BY id DESC LIMIT 1) as ultimo_nombre
                 FROM registros r
                 WHERE r.user_id NOT IN (SELECT zk_id FROM usuarios)
+                AND r.user_id NOT LIKE 'VISITA_%'
             """
             cursor.execute(sql_missing)
             faltantes = cursor.fetchall()

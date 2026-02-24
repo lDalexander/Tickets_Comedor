@@ -6,7 +6,8 @@ import textwrap
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from escpos.printer import Network
 from dotenv import load_dotenv
 
@@ -34,8 +35,11 @@ class TicketPrinter:
         self.SMTP_PASS     = os.getenv('SMTP_PASS')
         self.EMAIL_DESTINO = os.getenv('EMAIL_DESTINO', 'agarcia@detcuador.com')
 
-    def enviar_correo(self, asunto, mensaje):
-        """Envía notificaciones por correo electrónico sobre el estado de la impresora."""
+        # --- CONCURRENCY ---
+        self.email_executor = ThreadPoolExecutor(max_workers=2)
+
+    def _send_email_sync(self, asunto: str, mensaje: str) -> None:
+        """Síncrono: Envía el correo."""
         try:
             msg = MIMEMultipart()
             msg['From'] = self.SMTP_USER
@@ -43,16 +47,19 @@ class TicketPrinter:
             msg['Subject'] = f"🤖 MONITOR IMP. DE TICKETS: {asunto}"
             msg.attach(MIMEText(mensaje, 'plain'))
 
-            server = smtplib.SMTP(self.SMTP_SERVER, self.SMTP_PORT)
-            server.starttls()
-            server.login(self.SMTP_USER, self.SMTP_PASS)
-            server.sendmail(self.SMTP_USER, self.EMAIL_DESTINO, msg.as_string())
-            server.quit()
+            with smtplib.SMTP(self.SMTP_SERVER, self.SMTP_PORT) as server:
+                server.starttls()
+                server.login(self.SMTP_USER, self.SMTP_PASS)
+                server.sendmail(self.SMTP_USER, self.EMAIL_DESTINO, msg.as_string())
             
             logging.info(f"📧 [EMAIL] Enviado: {asunto}")
 
         except Exception as e:
             logging.error(f"❌ [EMAIL] Error enviando correo: {e}")
+
+    def enviar_correo(self, asunto: str, mensaje: str) -> None:
+        """Asíncrono: Encola el envío de correo en un hilo separado."""
+        self.email_executor.submit(self._send_email_sync, asunto, mensaje)
 
     def verificar_estado(self):
         """
@@ -170,7 +177,7 @@ class TicketPrinter:
             self._imprimir_header(p, ticket_number)
             
             # Fecha local
-            fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
+            fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
             p.set(align='left')
             p.text(f"FECHA: {fecha}\n")
             p.text("COLABORADOR:\n")
@@ -241,7 +248,7 @@ class TicketPrinter:
             p.set(align='center', bold=False)
             p.text("--------------------------------\n")
             
-            fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
+            fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
             p.set(align='left')
             p.text(f"AUTORIZA: {nombre_vip}\n")
             p.text(f"FECHA:    {fecha}\n")
@@ -360,7 +367,7 @@ class TicketPrinter:
             p.set(align='center', bold=False)
             p.text("--------------------------------\n")
             
-            fecha = (datetime.now() - timedelta(hours=5)).strftime('%d/%m/%Y %H:%M')
+            fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
             p.set(align='left')
             p.text(f"VISITANTE: {nombre_visitante}\n")
             p.text(f"FECHA:     {fecha}\n")

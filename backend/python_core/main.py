@@ -63,6 +63,93 @@ def main():
     # Diccionario para controlar rebotes (Debounce)
     last_scan_time = {}
 
+    def process_biometric_event(event, conn, user_map_zk) -> None:
+        if event is None or event.user_id is None: return
+
+        # Verificar estado impresora antes de procesar
+        estado_imp = printer.verificar_estado()
+
+        # Identificar usuario
+        user_id_str = str(event.user_id)
+        nombre_zk = user_map_zk.get(user_id_str, "Desconocido")
+        
+        # --- DEBOUNCE LOGIC (Evitar doble marcación) ---
+        current_time = time.time()
+        es_vip = user_id_str in db.IDS_VIPS
+        
+        # Limpieza de mem leak: Remover tiempos de escaneo antiguos (> 10 seg)
+        keys_to_delete = [k for k, t in last_scan_time.items() if current_time - t > 10]
+        for k in keys_to_delete:
+            del last_scan_time[k]
+
+        if not es_vip:
+            if user_id_str in last_scan_time and (current_time - last_scan_time[user_id_str] < 5):
+                print(f"⏳ Ignorando rebote (doble scan) para {nombre_zk}")
+                return
+            last_scan_time[user_id_str] = current_time
+        else:
+            print(f"🌟 VIP detectado ({nombre_zk}): Omitiendo filtro anti-rebote.")
+
+        # --- VERIFICACIÓN DE HORARIO ---
+        permitido, msg_horario = db.verificar_horario()
+        if not permitido:
+            print(f"⛔ {msg_horario} - Acceso denegado para {nombre_zk}")
+            return
+        
+        if nombre_zk == "Desconocido":
+            # Intentar re-sincronizar si es desconocido
+            users_zk = conn.get_users()
+            user_map_zk.update(db.sincronizar_usuarios_masivo(users_zk))
+            nombre_zk = user_map_zk.get(user_id_str, "Desconocido")
+        
+        # Obtener nombre real de BD
+        nombre_completo = db.obtener_nombre_real(event.user_id, nombre_zk)
+        print(f"\n--> Asistencia: {nombre_completo}")
+        
+        # Registrar evento en BD
+        resultado, ticket_number = db.registrar_evento(event.user_id, nombre_completo)
+
+        # Manejo de Errores Críticos (BD caída)
+        if resultado == "ERROR":
+            msg_error = "❌ Error Crítico en Registro: Iniciando Protocolo de Mantenimiento..."
+            print(msg_error)
+            logging.error("Iniciando Mantenimiento Automático por fallo en DB.")
+            printer.imprimir_ticket_mantenimiento()
+            printer.enviar_correo("🚨 FALLO CRÍTICO - SISTEMA COMEDOR", "Fallo al registrar evento en BD.")
+            return
+
+        # Imprimir Ticket si la impresora está lista
+        if estado_imp in ["OFFLINE", "SIN_PAPEL", "TAPA_ABIERTA", "ERROR_MECANICO"]:
+            err = f"❌ OMITIENDO IMPRESIÓN: {estado_imp}"
+            print(err)
+            logging.error(err)
+        else:
+            if SearchResultInPrintCondition(resultado):
+                es_dieta, es_especial, sin_sopa, sin_arroz = db.obtener_preferencias_menu(event.user_id)
+                if resultado == "TICKET DIETA": es_dieta = True
+                if resultado == "TICKET GERENCIA": es_especial = True
+
+                printer.imprimir_ticket_valido(
+                    nombre_completo, 
+                    event.user_id, 
+                    ticket_number,
+                    es_dieta=es_dieta,
+                    es_especial=es_especial,
+                    sin_sopa=sin_sopa,
+                    sin_arroz=sin_arroz
+                )
+
+            elif resultado == "TICKET EXTRA":
+                printer.imprimir_ticket_extra(nombre_completo, ticket_number)
+            
+            elif resultado == "INTENTO DE DUPLICADO":
+                print(f"🚫 Intento de duplicado para {nombre_completo} (Sin impresión)")
+
+        sys.stdout.flush()
+
+    def SearchResultInPrintCondition(resultado):
+         return resultado in ["TICKET ALMUERZO", "TICKET DIETA", "TICKET GERENCIA"]
+
     while True:
         zk = ZK(IP_BIOMETRICO, port=PUERTO_ZK, timeout=60)
         conn = None
@@ -77,114 +164,21 @@ def main():
             
             print(".: ESPERANDO HUELLAS :.")
             
-            for event in conn.live_capture():
-                if event is None or event.user_id is None: continue
-
-                # Verificar estado impresora antes de procesar
-                estado_imp = printer.verificar_estado()
-                
-                # Reset diario de logs o variables si fuera necesario
+            # El timeout en live_capture asegura que el yield devuelva el control (y no se quede bloqueado)
+            # si no hay huellas, permitiendo checkear si el día cambió o hay error de socket.
+            for event in conn.live_capture(new_timeout=120):
                 hoy = datetime.now()
                 if hoy.day != ultimo_dia:
                     ultimo_dia = hoy.day
-                    logging.info("Cambio de día: Variables reiniciadas.")
-
-                # Identificar usuario
-                user_id_str = str(event.user_id)
-                nombre_zk = user_map_zk.get(user_id_str, "Desconocido")
-                
-                # --- DEBOUNCE LOGIC (Evitar doble marcación) ---
-                current_time = time.time()
-                es_vip = user_id_str in db.IDS_VIPS
-                
-                # Solo aplicar debounce si NO es VIP
-                if not es_vip:
-                    if user_id_str in last_scan_time and (current_time - last_scan_time[user_id_str] < 5):
-                        # Ignorar si pasaron menos de 5 segundos
-                        print(f"⏳ Ignorando rebote (doble scan) para {nombre_zk}")
-                        continue
-                    # Actualizar tiempo solo si no es VIP (para que el VIP pueda marcar N veces seguidas sin actualizar el timer de bloqueo accidental)
-                    # O mejor, actualizamos siempre para tener rastro, pero la condición 'if not es_vip' permite pasar.
-                    last_scan_time[user_id_str] = current_time
-                else:
-                    print(f"🌟 VIP detectado ({nombre_zk}): Omitiendo filtro anti-rebote.")
-                # -----------------------------------------------
-
-                # --- VERIFICACIÓN DE HORARIO ---
-                permitido, msg_horario = db.verificar_horario()
-                if not permitido:
-                    print(f"⛔ {msg_horario} - Acceso denegado para {nombre_zk}")
-                    # Opcional: Podríamos imprimir un ticket de "Fuera de Horario" o solo ignorar
-                    continue
-                # -----------------------------------------------
-                
-                if nombre_zk == "Desconocido":
-                    # Intentar re-sincronizar si es desconocido
-                    users_zk = conn.get_users()
-                    user_map_zk = db.sincronizar_usuarios_masivo(users_zk)
-                    nombre_zk = user_map_zk.get(user_id_str, "Desconocido")
-                
-                # Obtener nombre real de BD
-                nombre_completo = db.obtener_nombre_real(event.user_id, nombre_zk)
-                print(f"\n--> Asistencia: {nombre_completo}")
-                
-                # Registrar evento en BD
-                resultado, ticket_number = db.registrar_evento(event.user_id, nombre_completo)
-
-                # Manejo de Errores Críticos (BD caída)
-                if resultado == "ERROR":
-                    msg_error = "❌ Error Crítico en Registro: Iniciando Protocolo de Mantenimiento..."
-                    print(msg_error)
-                    logging.error("Iniciando Mantenimiento Automático por fallo en DB.")
+                    logging.info("Cambio de día: Variables reiniciadas y forzando reconexión.")
+                    print("Reconectando por cambio de día (limpieza de socket TCP)...")
+                    break # Forzar que se desconecte y vuelva a iterar el while True
                     
-                    # Intentar imprimir ticket de error
-                    printer.imprimir_ticket_mantenimiento()
-                    
-                    # Notificar admin
-                    printer.enviar_correo("🚨 FALLO CRÍTICO - SISTEMA COMEDOR", "Fallo al registrar evento en BD.")
-                    
-                    # Intentar autoreparación (script externo)
+                if event is not None:
                     try:
-                         # Asumimos que el script está en la raíz del proyecto comedor
-                        # Script no encontrado, omitiendo paso para evitar errores
-                        logging.warning("Script daily_maintenance.sh no encontrado, omitiendo ejecución.")
-                    except Exception as sub_e:
-                        logging.error(f"No se pudo ejecutar script mantenimiento: {sub_e}")
-
-                # Imprimir Ticket si la impresora está lista
-                elif estado_imp in ["OFFLINE", "SIN_PAPEL", "TAPA_ABIERTA", "ERROR_MECANICO"]:
-                    err = f"❌ OMITIENDO IMPRESIÓN: {estado_imp}"
-                    print(err)
-                    logging.error(err)
-                else:
-                    # Lógica de impresión según tipo
-                    if resultado in ["TICKET ALMUERZO", "TICKET DIETA", "TICKET GERENCIA"]:
-                         # Obtener preferencias para personalizar el ticket (sin sopa/arroz)
-                        es_dieta, es_especial, sin_sopa, sin_arroz = db.obtener_preferencias_menu(event.user_id)
-                        
-                        # Sobreescribir banderas segun el tipo devuelto por registrar_evento
-                        # Si el evento fue registrado como DIETA, forzamos es_dieta=True
-                        if resultado == "TICKET DIETA": es_dieta = True
-                        if resultado == "TICKET GERENCIA": es_especial = True
-
-                        printer.imprimir_ticket_valido(
-                            nombre_completo, 
-                            event.user_id, 
-                            ticket_number,
-                            es_dieta=es_dieta,
-                            es_especial=es_especial,
-                            sin_sopa=sin_sopa,
-                            sin_arroz=sin_arroz
-                        )
-
-                    elif resultado == "TICKET EXTRA":
-                        printer.imprimir_ticket_extra(nombre_completo, ticket_number)
-                    
-                    elif resultado == "INTENTO DE DUPLICADO":
-                        # Opcional: imprimir duplicado o solo loguear
-                        print(f"🚫 Intento de duplicado para {nombre_completo} (Sin impresión)")
-
-                sys.stdout.flush()
+                        process_biometric_event(event, conn, user_map_zk)
+                    except Exception as ev_err:
+                        logging.error(f"Error procesando evento: {ev_err}")
 
         except KeyboardInterrupt:
             print("\n Apagando...")

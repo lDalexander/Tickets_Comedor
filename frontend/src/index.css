@@ -212,8 +212,10 @@ h3 {
   border-radius: 6px;
   color: white;
   outline: none;
-  box-sizing: border-box; /* Important for padding */
-  font-size: 1rem; /* Better for mobile touch */
+  box-sizing: border-box;
+  /* Important for padding */
+  font-size: 1rem;
+  /* Better for mobile touch */
 }
 
 .modal-input:focus {
@@ -303,17 +305,20 @@ h3 {
     width: 100%;
     justify-content: center;
     padding: 0.75rem;
-    font-size: 1rem; /* Larger touch target */
+    font-size: 1rem;
+    /* Larger touch target */
   }
 
   /* Modal Adjustments */
   .modal-content {
-    padding: 1.5rem !important; /* Visual relief */
+    padding: 1.5rem !important;
+    /* Visual relief */
     width: 95% !important;
   }
-  
+
   .modal-actions {
-    flex-direction: column; /* Stack buttons on very small screens? No, side-by-side matches inputs usually. Keep as row unless tiny. */
+    flex-direction: column;
+    /* Stack buttons on very small screens? No, side-by-side matches inputs usually. Keep as row unless tiny. */
   }
 
   /* Menu Selection Wrapper Class */
@@ -349,27 +354,80 @@ h3 {
   border-radius: 8px;
   border: 1px solid var(--glass-border);
   flex-wrap: wrap;
-  /* Allow wrapping on small screens */
+}
+
+.date-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-icon {
+  min-width: 16px;
+}
+
+.date-separator {
+  color: #94a3b8;
+  font-size: 0.875rem;
 }
 
 .date-input {
   background: transparent;
-  border: none;
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
   color: #f1f5f9;
   font-size: 0.875rem;
   color-scheme: dark;
   max-width: 130px;
-  /* Prevent date inputs from being too wide */
+  outline: none;
+}
+
+.date-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.filter-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--glass-border);
+  margin: 0 0.5rem;
+}
+
+.menu-btn {
+  background: #8b5cf6;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.menu-btn:hover {
+  opacity: 0.9;
 }
 
 .filter-select {
   background: transparent;
-  border: none;
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
   color: #f1f5f9;
   font-size: 0.875rem;
   outline: none;
   cursor: pointer;
-  max-width: 150px;
+  min-width: 120px;
+}
+
+.filter-select:focus {
+  border-color: var(--accent-primary);
 }
 
 .db-status-badge {
@@ -416,7 +474,8 @@ h3 {
     flex-direction: column;
     align-items: stretch;
     width: 100%;
-    gap: 0.75rem; /* Better spacing */
+    gap: 0.75rem;
+    /* Better spacing */
   }
 
   .filters-container {
@@ -424,18 +483,31 @@ h3 {
     align-items: stretch;
     width: 100%;
     margin-top: 0.5rem;
+    padding: 0.75rem;
   }
 
-  .filters-container input,
+  .date-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .date-input {
+    flex: 1;
+    max-width: none;
+    padding: 0.5rem;
+  }
+
   .filters-container select,
   .menu-btn,
   .menu-btn-link,
   .filter-btn {
     width: 100%;
-    /* Full width inputs on mobile */
     max-width: none;
     margin: 0.25rem 0;
-    padding: 0.75rem; /* Larger touch targets */
+    padding: 0.75rem;
+    /* Larger touch targets */
+    font-size: 1rem;
+    box-sizing: border-box;
   }
 
   /* Hide the separator line on mobile */
@@ -480,7 +552,8 @@ h3 {
   padding: 2rem;
   border-radius: 12px;
   width: 90%;
-  max-width: 400px; /* Reduced from 500px to match original look */
+  max-width: 400px;
+  /* Reduced from 500px to match original look */
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   max-height: 90vh;
