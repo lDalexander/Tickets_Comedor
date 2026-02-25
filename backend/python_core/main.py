@@ -164,6 +164,9 @@ def main():
             
             print(".: ESPERANDO HUELLAS :.")
             
+            # Timestamp del último chequeo o evento
+            last_activity = time.time()
+            
             # El timeout en live_capture asegura que el yield devuelva el control (y no se quede bloqueado)
             # si no hay huellas, permitiendo checkear si el día cambió o hay error de socket.
             for event in conn.live_capture(new_timeout=120):
@@ -175,10 +178,17 @@ def main():
                     break # Forzar que se desconecte y vuelva a iterar el while True
                     
                 if event is not None:
+                    last_activity = time.time()
                     try:
                         process_biometric_event(event, conn, user_map_zk)
                     except Exception as ev_err:
                         logging.error(f"Error procesando evento: {ev_err}")
+                else:
+                    # Yield vacio. Comprobar inactividad prolongada
+                    if time.time() - last_activity > 7200:
+                        logging.info("Renovando conexión (2h de inactividad). Previniendo TCP Drop.")
+                        print("\n🔄 2 horas sin actividad detectadas. Reseteando conexión de red...")
+                        break # Rompe el for, va al finally para cerrar socket limpio y reconecta.
 
         except KeyboardInterrupt:
             print("\n Apagando...")
