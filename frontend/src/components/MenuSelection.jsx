@@ -565,7 +565,7 @@ const MenuSelection = () => {
                     </div>
                     <div className="page-header" style={{ marginTop: '2rem', textAlign: 'center', borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
                         <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
-                            John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 3.0
+                            John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 3.1.0
                         </p>
                     </div>
                 </div>

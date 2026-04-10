@@ -44,7 +44,7 @@ router.get('/stats/history', async (req, res) => {
         }));
 
         res.json(formattedRows);
-        logger.info(`Fetched history logs with type=${type || 'all'}`);
+        logger.info(`Fetched history logs with type=${req.query.type || 'all'}`);
     } catch (error) {
         logger.error('Error fetching history logs', error);
         res.status(500).json([]);

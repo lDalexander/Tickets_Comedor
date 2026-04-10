@@ -7,6 +7,9 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const fs = require('fs');
 const path = require('path');
 
+// Path to the built frontend
+const FRONTEND_DIST = path.join(__dirname, '..', 'frontend', 'dist');
+
 // Cargar variables de entorno desde .env
 dotenv.config();
 
@@ -254,19 +257,29 @@ async function checkNewRecords() {
 // Ejecutar polling cada 2000ms (2 segundos)
 setInterval(checkNewRecords, 2000);
 
+// --- SERVIR FRONTEND ESTÁTICO (Producción) ---
+// Servir los archivos compilados de React/Vite
+if (fs.existsSync(FRONTEND_DIST)) {
+    app.use(express.static(FRONTEND_DIST));
+    // SPA catch-all: cualquier ruta no-API devuelve index.html para React Router
+    app.get('{*path}', (req, res) => {
+        res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+    });
+    logger.info(`Serving frontend from ${FRONTEND_DIST}`);
+} else {
+    logger.warn('Frontend dist not found. Run "npm run build" in /frontend.');
+}
+
 // --- MANEJO DE ERRORES GLOBAL ---
 app.use((err, req, res, next) => {
     logger.error('Unhandled Error', err);
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     logger.info(`Server running on port ${PORT}`);
     console.log(`Server running on port ${PORT}`);
 });
-
-// Hack para mantener proceso vivo si algo falla (Prevent crash loop)
-setInterval(() => { }, 1000);
 
 // Debugging: Log why the process is exiting
 process.on('exit', (code) => {

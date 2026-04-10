@@ -6,12 +6,15 @@ import StatCard from './StatCard';
 import { DailyTrendChart, LunchTypeChart } from './Charts';
 import LiveTerminal from './LiveTerminal';
 import ManualTicketModal from './ManualTicketModal';
-import { Utensils, Ticket, AlertTriangle, Users, Database, Calendar } from 'lucide-react';
+import ThirdPartyTicketModal from './ThirdPartyTicketModal';
+import logo from '../assets/logo_sigac.png';
+import { Utensils, Ticket, Users, Database, Calendar, UserPlus, ShieldCheck, Eye, Star } from 'lucide-react';
 
 const fetcher = url => axios.get(url).then(res => res.data);
 
 const Dashboard = () => {
     const [showManualModal, setShowManualModal] = useState(false);
+    const [showTerceroModal, setShowTerceroModal] = useState(false);
 
     // Filter State
     const [dateRange, setDateRange] = useState({
@@ -37,16 +40,15 @@ const Dashboard = () => {
 
     const queryString = params.toString() ? `?${params.toString()}` : '';
 
-    const { data: summary, isLoading: isLoadingSummary } = useSWR(`/api/stats/summary${queryString}`, fetcher, { refreshInterval: 30000 });
-    const { data: dailyData, isLoading: isLoadingDaily } = useSWR(`/api/stats/daily${queryString}`, fetcher, { refreshInterval: 30000 });
-    const { data: historyLog, isLoading: isLoadingHistory } = useSWR(`/api/stats/history${queryString}`, fetcher, { refreshInterval: 30000 });
-    const { data: healthRes, error: healthError } = useSWR(`/api/health`, fetcher, { refreshInterval: 30000, errorRetryCount: 1 });
+    const swrOpts = { refreshInterval: 60000, keepPreviousData: true, revalidateOnFocus: false };
+    const { data: summary, isLoading: isLoadingSummary } = useSWR(`/api/stats/summary${queryString}`, fetcher, swrOpts);
+    const { data: dailyData, isLoading: isLoadingDaily } = useSWR(`/api/stats/daily${queryString}`, fetcher, swrOpts);
+    const { data: historyLog, isLoading: isLoadingHistory } = useSWR(`/api/stats/history${queryString}`, fetcher, swrOpts);
+    const { data: healthRes, error: healthError } = useSWR(`/api/health`, fetcher, { refreshInterval: 60000, errorRetryCount: 1, revalidateOnFocus: false });
 
     const dbStatus = healthError ? 'offline' : (healthRes?.status || 'checking');
     const loading = isLoadingSummary || isLoadingDaily || isLoadingHistory;
 
-    // Manual refresh handler (no-op since SWR auto-updates with params, but keep for UI compatibility if needed)
-    // SWR updates automatically when `queryString` changes.
     const handleFilter = () => { };
 
     // Download Handler
@@ -55,21 +57,15 @@ const Dashboard = () => {
             alert("Por favor, selecciona un rango de fechas para descargar el reporte.\n(Esto evita descargas masivas que bloqueen el sistema).");
             return;
         }
-
-        // Use relative path (proxy handles forwarding)
         const baseUrl = '/api';
-
-        // Construct query manually to open in new window
         let query = `?startDate=${dateRange.start}&endDate=${dateRange.end}&type=${typeFilter}`;
         window.open(`${baseUrl}/stats/export-excel${query}`, '_blank');
     };
 
-    // Helper to format time to local timezone
+    // Helper to format time
     const formatTime = (dateStr, timeStr) => {
         if (!dateStr || !timeStr) return timeStr;
         try {
-            // Database stores Local Time (Ecuador). 
-            // Parsing ISO string without 'Z' treats it as Local Time in the browser.
             const localDate = new Date(`${dateStr}T${timeStr}`);
             return localDate.toLocaleTimeString();
         } catch (e) {
@@ -77,32 +73,64 @@ const Dashboard = () => {
         }
     };
 
+    // Helper for ticket type badge color
+    const getTypeBadge = (type) => {
+        const t = (type || '').toUpperCase();
+        if (t.includes('GERENCIA')) return { bg: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', label: 'Gerencia' };
+        if (t.includes('VISITA')) return { bg: 'rgba(249, 115, 22, 0.15)', color: '#fb923c', label: 'Visita' };
+        if (t.includes('DIETA')) return { bg: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', label: 'Dieta' };
+        if (t.includes('EXTRA')) return { bg: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', label: 'Extra' };
+        if (t.includes('TERCERO')) return { bg: 'rgba(244, 114, 182, 0.15)', color: '#f472b6', label: 'Tercero' };
+        return { bg: 'rgba(56, 189, 248, 0.15)', color: '#7dd3fc', label: 'Normal' };
+    };
+
     if (loading && !summary) return <div className="page-header" style={{ textAlign: 'center' }}>Cargando datos...</div>;
 
-    // Aggregate daily data for today for doughnut chart if not provided by summary
     const safeDailyData = dailyData || [];
     const safeHistoryLog = historyLog || [];
 
-    const todayTypeData = safeDailyData.length > 0 ? {
+    // Aggregate for doughnut chart
+    const chartTypeData = {
         type_normal: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_normal) || 0), 0),
-        type_special: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_special) || 0), 0)
-    } : { type_normal: 0, type_special: 0 };
+        type_dieta: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_dieta) || 0), 0),
+        type_gerencia: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_gerencia) || 0), 0),
+        type_visita: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_visita) || 0), 0),
+        type_extra: safeDailyData.reduce((acc, curr) => acc + (parseInt(curr.type_extra) || 0), 0),
+    };
 
     return (
         <div>
             <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                <div>
-                    <h1 className="header-title">Dashboard de Comedor</h1>
-                    <p className="header-subtitle">Visualización en tiempo real de tickets y almuerzos</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.2rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(56, 189, 248, 0.05)', padding: '8px', borderRadius: '16px', border: '1px solid rgba(56, 189, 248, 0.15)', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+                        <img src={logo} alt="SIGAC Icon" style={{ height: '56px', width: 'auto', display: 'block' }} />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: '800', background: 'linear-gradient(135deg, #38bdf8 0%, #10b981 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-0.5px', lineHeight: '1.1' }}>
+                            SIGAC
+                        </h1>
+                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px' }}>
+                            Sistema Integral de Alimentación Corporativa
+                        </p>
+                    </div>
                 </div>
 
                 <div className="header-controls">
-                    {/* Botón Ticket Visitas (Nuevo) */}
+                    {/* Botón Ticket Visitas */}
                     <button
                         onClick={() => setShowManualModal(true)}
                         className="ticket-visit-btn"
                     >
-                        <Ticket size={16} /> Ticket Visitas
+                        <Eye size={16} /> Ticket Visitas
+                    </button>
+
+                    {/* Botón Ticket a Tercero */}
+                    <button
+                        onClick={() => setShowTerceroModal(true)}
+                        className="ticket-visit-btn"
+                        style={{ background: '#f59e0b' }}
+                    >
+                        <UserPlus size={16} /> Ticket a Tercero
                     </button>
 
                     {/* Filters */}
@@ -140,7 +168,11 @@ const Dashboard = () => {
                             className="filter-select"
                         >
                             <option value="" style={{ background: '#1e293b' }}>Todos los Tipos</option>
-                            <option value="extra" style={{ background: '#1e293b' }}>Tickets Extra</option>
+                            <option value="normal" style={{ background: '#1e293b' }}>Normal</option>
+                            <option value="dieta" style={{ background: '#1e293b' }}>Dieta</option>
+                            <option value="gerencia" style={{ background: '#1e293b' }}>Gerencia</option>
+                            <option value="visita" style={{ background: '#1e293b' }}>Visita</option>
+                            <option value="extra" style={{ background: '#1e293b' }}>Extra</option>
                         </select>
 
                         <button
@@ -169,7 +201,8 @@ const Dashboard = () => {
                 </div>
             </div>
 
-            <div className="dashboard-grid">
+            {/* === STAT CARDS - Ahora con tipos separados === */}
+            <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
                 <StatCard
                     title="Total Almuerzos"
                     value={summary?.totalLunches}
@@ -177,27 +210,34 @@ const Dashboard = () => {
                     color="#38bdf8"
                 />
                 <StatCard
-                    title="Dieta"
-                    value={summary?.totalSpecial}
-                    icon={Ticket}
-                    color="#f472b6"
-                />
-                <StatCard
                     title="Normal"
                     value={summary?.totalNormal}
-                    icon={Utensils}
-                    color="#6366f1"
+                    icon={Ticket}
+                    color="#7dd3fc"
                 />
                 <StatCard
-                    title="Tendencia Principal"
-                    value={(() => {
-                        const type = summary?.mostPopularType?.toLowerCase() || '';
-                        if (type.includes('almuerzo')) return 'ALMUERZO NORMAL';
-                        if (type.includes('extra') || type.includes('especial') || type.includes('dieta')) return 'ALMUERZO DIETA';
-                        return type.toUpperCase() || 'N/A';
-                    })()}
-                    icon={Users}
+                    title="Dieta"
+                    value={summary?.totalDieta}
+                    icon={Utensils}
                     color="#10b981"
+                />
+                <StatCard
+                    title="Gerencia"
+                    value={summary?.totalGerencia}
+                    icon={ShieldCheck}
+                    color="#a78bfa"
+                />
+                <StatCard
+                    title="Visita"
+                    value={summary?.totalVisita}
+                    icon={Users}
+                    color="#fb923c"
+                />
+                <StatCard
+                    title="Extra"
+                    value={summary?.totalExtra}
+                    icon={Star}
+                    color="#fbbf24"
                 />
             </div>
 
@@ -208,7 +248,7 @@ const Dashboard = () => {
                 </div>
                 <div className="card">
                     <h3 className="stat-label">Distribución ({dateRange.start ? 'Rango' : 'Ultimos 7 dias'})</h3>
-                    <LunchTypeChart data={todayTypeData} />
+                    <LunchTypeChart data={chartTypeData} />
                 </div>
             </div>
 
@@ -248,22 +288,36 @@ const Dashboard = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {safeHistoryLog.map(item => (
-                                <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                    <td style={{ padding: '1rem' }}>{item.numero_ticket || '-'}</td>
-                                    <td style={{ padding: '1rem', color: '#f1f5f9' }}>{item.user}</td>
-                                    <td style={{ padding: '1rem' }}>{formatTime(item.date, item.time)}</td>
-                                    <td style={{ padding: '1rem' }}>{item.date}</td>
-                                    <td style={{ padding: '1rem' }}>{item.type}</td>
-                                    <td style={{
-                                        padding: '1rem',
-                                        color: item.status === 'Bloqueado' ? '#ef4444' : '#10b981',
-                                        fontWeight: '500'
-                                    }}>
-                                        {item.status}
-                                    </td>
-                                </tr>
-                            ))}
+                            {safeHistoryLog.map(item => {
+                                const badge = getTypeBadge(item.type);
+                                return (
+                                    <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <td style={{ padding: '1rem' }}>{item.numero_ticket || '-'}</td>
+                                        <td style={{ padding: '1rem', color: '#f1f5f9' }}>{item.user}</td>
+                                        <td style={{ padding: '1rem' }}>{formatTime(item.date, item.time)}</td>
+                                        <td style={{ padding: '1rem' }}>{item.date}</td>
+                                        <td style={{ padding: '1rem' }}>
+                                            <span style={{
+                                                background: badge.bg,
+                                                color: badge.color,
+                                                padding: '0.25rem 0.6rem',
+                                                borderRadius: '999px',
+                                                fontSize: '0.78rem',
+                                                fontWeight: '500'
+                                            }}>
+                                                {badge.label}
+                                            </span>
+                                        </td>
+                                        <td style={{
+                                            padding: '1rem',
+                                            color: item.status === 'Bloqueado' ? '#ef4444' : '#10b981',
+                                            fontWeight: '500'
+                                        }}>
+                                            {item.status}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -301,11 +355,13 @@ const Dashboard = () => {
                     </a>
                 </div>
                 <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
-                    John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 3.0
+                    John Alexander Garcia | Todos los derechos reservados |DETCUADOR S.A.| Version 3.2.1
                 </p>
             </div>
-            {/* Manual Ticket Modal */}
+
+            {/* Modals */}
             {showManualModal && <ManualTicketModal onClose={() => setShowManualModal(false)} />}
+            {showTerceroModal && <ThirdPartyTicketModal onClose={() => setShowTerceroModal(false)} />}
         </div>
     );
 };

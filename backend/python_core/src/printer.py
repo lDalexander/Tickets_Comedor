@@ -165,7 +165,7 @@ class TicketPrinter:
         p.text(" VALIDO POR 1 ALMUERZO \n\n")
         p.set(align='center', bold=False, invert=False)
         p.text("Desarrollado por: John Garcia\n")
-        p.text("Version: 3.0\n")
+        p.text("Version: 3.2.1\n")
         p.text("\n\n\n")
         p.cut()
 

@@ -2,25 +2,24 @@
 # -*- coding: utf-8 -*-
 """
 ╔══════════════════════════════════════════════════════════════╗
-║            BACKUP COMEDOR - RESPALDO QUINCENAL               ║
-║  Respaldo completo + Envío por correo + Purga de BD          ║
-║  Se ejecuta los días 1 y 15 de cada mes a las 15:00          ║
+║            BACKUP COMEDOR - RESPALDO SEMANAL                 ║
+║  Respaldo completo + Envío por correo + Copia Local Segura   ║
+║  Se ejecuta 1 vez por semana                                 ║
 ╚══════════════════════════════════════════════════════════════╝
 
 FLUJO:
-  0. Verificar si hay registros antiguos (>15 días). Si no hay, NO ejecutar.
   1. mysqldump → /tmp/comedor_backup_FECHA.sql
   2. tar -czf  → /tmp/comedor_backup_FECHA.tar.gz (excluye node_modules y venv)
-  3. Enviar .tar.gz por email SMTP (Outlook)
-  4. SOLO si el email fue exitoso → DELETE registros > 15 días
+  3. Mover .tar.gz a carpeta local Backups/
+  4. Enviar .tar.gz por email SMTP (Outlook)
   5. Limpiar archivos temporales de /tmp
 
 USO MANUAL:
   cd /home/john/comedor/Tickets_Comedor
   python3 backup_comedor.py
 
-CRON (días 1 y 15 de cada mes a las 15:00 hora Ecuador):
-  0 15 1,15 * * cd /home/john/comedor/Tickets_Comedor && /usr/bin/python3 backup_comedor.py >> /tmp/backup_comedor.log 2>&1
+CRON (Cada semana, ejemplo: Domingos a las 15:00):
+  0 15 * * 0 cd /home/john/comedor/Tickets_Comedor && /usr/bin/python3 backup_comedor.py >> /tmp/backup_comedor.log 2>&1
 """
 
 import os
@@ -57,8 +56,8 @@ FECHA_STR   = datetime.now().strftime("%Y%m%d_%H%M")
 SQL_FILE    = f"/tmp/comedor_backup_{FECHA_STR}.sql"
 TAR_FILE    = f"/tmp/comedor_backup_{FECHA_STR}.tar.gz"
 
-# Retención: conservar los últimos N días en la BD
-DIAS_RETENCION = 15
+# Ruta para Backups Locales (comprimidos)
+BACKUPS_DIR = os.path.join(os.getcwd(), "Backups")
 
 # Tamaño máximo del adjunto (20 MB en bytes)
 MAX_ATTACH_BYTES = 20 * 1024 * 1024
@@ -178,16 +177,7 @@ def paso2_comprimir():
 
     cmd = [
         "tar", "-czf", TAR_FILE,
-        "--exclude=./frontend/node_modules",
-        "--exclude=./backend/node_modules",
-        "--exclude=./venv",
-        "--exclude=./backend/python_core/venv",
-        "--exclude=./.git",
-        "--exclude=./Backup_Version_Actual",
-        "--exclude=*.tar.gz",
-        "--exclude=*.log",
-        "-C", os.path.dirname(SQL_FILE), os.path.basename(SQL_FILE),  # Incluir el .sql
-        "-C", os.getcwd(), ".",                                        # Incluir el proyecto
+        "-C", os.path.dirname(SQL_FILE), os.path.basename(SQL_FILE),  # Solo incluir el .sql
     ]
 
     try:
@@ -199,9 +189,31 @@ def paso2_comprimir():
         size_mb = os.path.getsize(TAR_FILE) / (1024 * 1024)
         log.info(f"✅ Compresión exitosa: {TAR_FILE} ({size_mb:.2f} MB)")
 
-        if os.path.getsize(TAR_FILE) > MAX_ATTACH_BYTES:
-            log.warning(f"⚠️ ADVERTENCIA: El archivo pesa {size_mb:.2f} MB, excede el límite de 20 MB para correo.")
-            log.warning("   El correo podría ser rechazado por el servidor SMTP.")
+        # COPIAR A CARPETA BACKUPS LOCAL Y ROTAR ARCHIVOS
+        if not os.path.exists(BACKUPS_DIR):
+            os.makedirs(BACKUPS_DIR)
+        import shutil
+        local_backup_path = os.path.join(BACKUPS_DIR, os.path.basename(TAR_FILE))
+        shutil.copy2(TAR_FILE, local_backup_path)
+        log.info(f"✅ Copia de seguridad guardada a nivel local en: {local_backup_path}")
+
+        # PURGA DE COPIAS ANTIGUAS LOCALES (Mantener 3 mas recientes)
+        archivos_backup = []
+        for file in os.listdir(BACKUPS_DIR):
+            if file.endswith(".tar.gz"):
+                archivos_backup.append(os.path.join(BACKUPS_DIR, file))
+
+        # Ordenar por fecha de modificacion (o nombre ya que tiene timestamp) descendente
+        archivos_backup.sort(reverse=True)
+
+        if len(archivos_backup) > 3:
+            log.info("🧹 Eliminando copias locales antiguas, manteniendo solo las 3 más recientes...")
+            for old_file in archivos_backup[3:]:
+                try:
+                    os.remove(old_file)
+                    log.info(f"   🗑️ Copia local eliminada: {os.path.basename(old_file)}")
+                except OSError as e:
+                    log.warning(f"   ⚠️ No se pudo eliminar la copia antigua {old_file}: {e}")
 
         return True
 
@@ -236,14 +248,14 @@ def paso3_enviar_email():
         msg["Subject"] = f"🗄️ Backup Comedor - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
 
         body = (
-            f"Respaldo quincenal automático del Sistema de Comedor.\n\n"
+            f"Respaldo semanal automático del Sistema de Comedor.\n\n"
             f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
             f"📦 Archivo: {os.path.basename(TAR_FILE)}\n"
             f"📏 Tamaño: {size_mb:.2f} MB\n"
-            f"🗃️ Contenido: Base de datos completa + código fuente\n\n"
-            f"⚠️ IMPORTANTE: Si este correo fue recibido correctamente, los registros\n"
-            f"   de la tabla 'registros' con más de {DIAS_RETENCION} días de antigüedad\n"
-            f"   han sido purgados de la base de datos.\n\n"
+            f"🗃️ Contenido: Base de datos completa\n\n"
+            f"⚠️ NOTA: Los registros antiguos ya no se eliminan de la base de datos "
+            f"   (Purga Inactiva) de acuerdo a las nuevas políticas.\n"
+            f"   Una copia ha sido resguardada en el servidor (reteniendo siempre las últimas 3).\n\n"
             f"--- Generado automáticamente por backup_comedor.py ---"
         )
         msg.attach(MIMEText(body, "plain"))
@@ -397,44 +409,14 @@ def paso5_limpiar_temporales():
 def main():
     inicio = datetime.now()
     log.info("╔══════════════════════════════════════════════════════════╗")
-    log.info("║       BACKUP COMEDOR - RESPALDO QUINCENAL              ║")
+    log.info("║       BACKUP COMEDOR - RESPALDO SEMANAL                ║")
     log.info(f"║       {inicio.strftime('%d/%m/%Y %H:%M:%S')}                               ║")
     log.info("╚══════════════════════════════════════════════════════════╝")
     log.info(f"Directorio de trabajo: {os.getcwd()}")
     log.info("")
 
-    # PASO 0: Verificar si hay datos para respaldar
-    if not paso0_verificar_datos():
-        log.info("")
-        log.info("ℹ️ Enviando notificación de que no hay datos para respaldar...")
-        try:
-            msg = MIMEMultipart()
-            msg["From"]    = SMTP_USER
-            msg["To"]      = ", ".join(EMAIL_DEST)
-            msg["Subject"] = f"ℹ️ Backup Comedor - Sin registros antiguos ({datetime.now().strftime('%d/%m/%Y')})"
-            body = (
-                f"El respaldo quincenal programado se ejecutó el {datetime.now().strftime('%d/%m/%Y a las %H:%M:%S')},\n"
-                f"pero NO se realizó respaldo ni purga porque no se encontraron registros\n"
-                f"con más de {DIAS_RETENCION} días de antigüedad en la tabla 'registros'.\n\n"
-                f"Esto es normal si el último respaldo ya limpió los datos antiguos.\n\n"
-                f"NO RESPONDER - GENERADO AUTOMÁTICAMENTE\n"
-                f"NO TE OLVIDES DE PREGUNTAR AL ADMINISTRADOR DEL SISTEMA COMO FUNCIONA"
-            )
-            msg.attach(MIMEText(body, "plain"))
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=60)
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_USER, EMAIL_DEST, msg.as_string())
-            server.quit()
-            log.info(f"✅ Notificación enviada a {', '.join(EMAIL_DEST)}")
-        except Exception as e:
-            log.warning(f"⚠️ No se pudo enviar la notificación: {e}")
-
-        log.info("")
-        log.info("╔══════════════════════════════════════════════════════════╗")
-        log.info("║   ℹ️ BACKUP NO NECESARIO - Sin registros antiguos       ║")
-        log.info("╚══════════════════════════════════════════════════════════╝")
-        sys.exit(0)
+    # NOTA: Ya no hay Paso 0 para evitar respaldos, se respalda si o si
+    # NOTA: Tampoco hay Paso 4 (purga), se eliminó la limpieza de datos
 
     # PASO 1: mysqldump
     if not paso1_mysqldump():
@@ -452,16 +434,11 @@ def main():
     email_enviado = paso3_enviar_email()
 
     if not email_enviado:
-        log.error("🛑 EMAIL FALLÓ: NO se purgará la base de datos.")
+        log.error("🛑 EMAIL FALLÓ: Hubo un problema al enviar correo.")
         log.error("   Los archivos temporales se conservan en /tmp para revisión manual.")
         log.error(f"   SQL: {SQL_FILE}")
         log.error(f"   TAR: {TAR_FILE}")
         sys.exit(1)
-
-    # PASO 4: Purgar BD (SOLO si email fue exitoso)
-    log.info("")
-    log.info("📧 Email confirmado como enviado → Procediendo con purga segura...")
-    paso4_purgar_registros()
 
     # PASO 5: Limpiar temporales
     paso5_limpiar_temporales()
