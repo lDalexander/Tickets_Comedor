@@ -182,10 +182,8 @@ else
 fi
 
 echo "[8] Enviando Reporte SMTP..."
-echo "[8] Enviando Reporte SMTP..."
 cd "$PROJECT_DIR/backend/python_core"
 ./venv/bin/python send_maintenance_status.py
-cd "$PROJECT_DIR"
 cd "$PROJECT_DIR"
 
 echo "========================================================"

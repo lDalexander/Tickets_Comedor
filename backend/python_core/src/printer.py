@@ -218,20 +218,7 @@ class TicketPrinter:
             if p: p.close()
 
     def imprimir_ticket_extra(self, nombre_vip, ticket_number):
-        p = None
-        try:
-            p = self._conectar()
-            self._imprimir_header(p, ticket_number) # Ojo: Header específico en ticket extra? Parece que si usa DETCUADOR pero dice TICKET EXTRA
-            
-            # Corrección de Header para Extra (sobreescribe lo estándar si es necesario o ajustamos standard)
-            # El original tenia header similar pero con "TICKET EXTRA" explicito.
-            # Usemos lógica custom aquí para ser fieles al original.
-            
-            # Reiniciamos P para hacerlo custom
-        except: pass
-        if p: p.close()
-        
-        # Implementación Fiel
+        """Imprime un ticket EXTRA para VIPs que ya almorzaron."""
         p = None
         try:
             p = self._conectar()

@@ -1,4 +1,0 @@
-mysql-connector-python
-python-dotenv
-pyzk
-python-escpos
