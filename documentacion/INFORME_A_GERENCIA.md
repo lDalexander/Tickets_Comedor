@@ -1,4 +1,4 @@
-# INFORME DE GESTIÓN TÉCNICA: SISTEMA INTEGRAL DE ALIMENTACIÓN CORPORATIVA (SIGAC)
+# INFORME DE GESTIÓN TÉCNICA: SISTEMA INTEGRADO DE GESTION DE COMEDOR (SIGAC)
 
 **Para:** Gerencia General / Dirección de Operaciones
 **De:** Departamento de Sistemas / TI (John Garcia)

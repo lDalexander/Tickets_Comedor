@@ -2,19 +2,31 @@
 import React, { useState } from 'react';
 import useSWR from 'swr';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import StatCard from './StatCard';
 import { DailyTrendChart, LunchTypeChart } from './Charts';
 import LiveTerminal from './LiveTerminal';
 import ManualTicketModal from './ManualTicketModal';
 import ThirdPartyTicketModal from './ThirdPartyTicketModal';
 import logo from '../assets/logo_sigac.png';
-import { Utensils, Ticket, Users, Database, Calendar, UserPlus, ShieldCheck, Eye, Star } from 'lucide-react';
+import { Utensils, Ticket, Users, Database, Calendar, UserPlus, ShieldCheck, Eye, Star, Settings } from 'lucide-react';
+
+function isAdminSessionActive() {
+    const token = localStorage.getItem('comedor_admin_token');
+    if (!token) return false;
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        return payload.exp * 1000 > Date.now();
+    } catch { return false; }
+}
 
 const fetcher = url => axios.get(url).then(res => res.data);
 
 const Dashboard = () => {
+    const navigate = useNavigate();
     const [showManualModal, setShowManualModal] = useState(false);
     const [showTerceroModal, setShowTerceroModal] = useState(false);
+    const hasAdminSession = isAdminSessionActive();
 
     // Filter State
     const [dateRange, setDateRange] = useState({
@@ -110,7 +122,7 @@ const Dashboard = () => {
                             SIGAC
                         </h1>
                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px' }}>
-                            Sistema Integral de Alimentación Corporativa
+                            SISTEMA INTEGRADO DE GESTION DE COMEDOR
                         </p>
                     </div>
                 </div>
@@ -192,11 +204,35 @@ const Dashboard = () => {
                         </button>
                     </div>
 
-                    <div className="db-status-badge">
-                        <Database size={16} color={dbStatus === 'online' ? '#10b981' : '#ef4444'} />
-                        <span style={{ fontSize: '0.875rem', color: dbStatus === 'online' ? '#10b981' : '#ef4444' }}>
-                            {dbStatus === 'online' ? 'Base de Datos Conectada' : 'Sin Conexión a BD'}
-                        </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className="db-status-badge">
+                            <Database size={16} color={dbStatus === 'online' ? '#10b981' : '#ef4444'} />
+                            <span style={{ fontSize: '0.875rem', color: dbStatus === 'online' ? '#10b981' : '#ef4444' }}>
+                                {dbStatus === 'online' ? 'Base de Datos Conectada' : 'Sin Conexión a BD'}
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => navigate('/admin-v2')}
+                            title={hasAdminSession ? 'Ir al Panel Admin' : 'Iniciar sesión en Panel Admin'}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '0.35rem',
+                                padding: '0.3rem 0.65rem',
+                                background: hasAdminSession ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.05)',
+                                border: `1px solid ${hasAdminSession ? 'rgba(56,189,248,0.25)' : 'rgba(255,255,255,0.1)'}`,
+                                borderRadius: '0.4rem',
+                                color: hasAdminSession ? '#38bdf8' : '#64748b',
+                                fontSize: '0.78rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                whiteSpace: 'nowrap',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(56,189,248,0.18)'; e.currentTarget.style.color = '#38bdf8'; e.currentTarget.style.borderColor = 'rgba(56,189,248,0.35)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = hasAdminSession ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = hasAdminSession ? '#38bdf8' : '#64748b'; e.currentTarget.style.borderColor = hasAdminSession ? 'rgba(56,189,248,0.25)' : 'rgba(255,255,255,0.1)'; }}
+                        >
+                            <Settings size={13} />
+                            Admin
+                        </button>
                     </div>
                 </div>
             </div>

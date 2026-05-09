@@ -6,54 +6,90 @@ const pool = db.pool.promise();
 const { exec } = require('child_process');
 const path = require('path');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
-// Middleware to check admin/superadmin token? 
-// For now, we will rely on frontend passing a "secret" header or just open (as requested local tool),
-// but the prompt asked for "levels of access". I will implement a basic header check if needed, 
-// but for now I'll keep it open and let the frontend handle the "login" UI part, 
-// or I can enforce a simple check here. 
-// User asked: "niveles de acceso".
-// Best practice: Check a header like 'X-Admin-Level'.
+const JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'comedor_admin_secret';
 
+// --- MIDDLEWARE DE AUTENTICACIÓN ---
+// Acepta: header x-admin-secret (legacy) O Bearer JWT (nuevo panel)
 const checkAuth = (level) => (req, res, next) => {
-    // This is a simplified "auth" for the local tool context
-    // In a real app, verify JWT/Session.
     const secret = req.headers['x-admin-secret'];
+    if (secret) {
+        const ADMIN_SECRET = 'admin123';
+        const SUPER_SECRET = 'supersecret';
+        if (level === 'superadmin') {
+            if (secret === SUPER_SECRET) return next();
+        } else {
+            if (secret === ADMIN_SECRET || secret === SUPER_SECRET) return next();
+        }
+        return res.status(403).json({ error: 'Unauthorized Access' });
+    }
 
-    // Hardcoded secrets for this local tool as requested
-    const ADMIN_SECRET = 'admin123';
-    const SUPER_SECRET = 'supersecret';
-
-    if (level === 'superadmin') {
-        if (secret === SUPER_SECRET) return next();
-    } else {
-        // Admin level allows admin OR superadmin
-        if (secret === ADMIN_SECRET || secret === SUPER_SECRET) return next();
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.slice(7);
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            req.adminUser = decoded;
+            if (level === 'superadmin' && decoded.rol !== 'superadmin') {
+                return res.status(403).json({ error: 'Se requiere acceso superadmin' });
+            }
+            return next();
+        } catch {
+            return res.status(401).json({ error: 'Token inválido o expirado' });
+        }
     }
 
     return res.status(403).json({ error: 'Unauthorized Access' });
 };
 
-// --- GENERIC ROUTES (ADMIN) ---
+// --- LOGIN JWT ---
+router.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Credenciales requeridas' });
+    }
+    try {
+        const [rows] = await pool.query(
+            "SELECT * FROM usuarios_impresion_manual WHERE username = ? AND activo = 1 AND rol = 'admin'",
+            [username]
+        );
+        if (rows.length === 0) {
+            return res.status(401).json({ error: 'Usuario no encontrado o sin permisos de administrador' });
+        }
+        const user = rows[0];
+        const match = await bcrypt.compare(password, user.password_hash);
+        if (!match) {
+            return res.status(401).json({ error: 'Contraseña incorrecta' });
+        }
+        const token = jwt.sign(
+            { id: user.id, nombre: user.nombre_real, rol: user.rol },
+            JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+        logger.info(`Admin login: ${user.username} (ID: ${user.id})`);
+        res.json({ success: true, token, user: { id: user.id, nombre: user.nombre_real, rol: user.rol } });
+    } catch (error) {
+        logger.error('Admin login error:', error);
+        res.status(500).json({ error: 'Error del servidor' });
+    }
+});
 
-// 1. List Tables
+// --- RUTAS ADMIN ---
+
 router.get('/tables', checkAuth('admin'), async (req, res) => {
     try {
         const [rows] = await pool.query('SHOW TABLES');
-        // Convert to simple array
-        const tables = rows.map(r => Object.values(r)[0]);
-        res.json(tables);
+        res.json(rows.map(r => Object.values(r)[0]));
     } catch (error) {
         logger.error('Admin: List Tables Error', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// 2. Get Table Schema (Columns)
 router.get('/schema/:table', checkAuth('admin'), async (req, res) => {
     try {
-        const { table } = req.params;
-        const [rows] = await pool.query(`DESCRIBE ??`, [table]);
+        const [rows] = await pool.query(`DESCRIBE ??`, [req.params.table]);
         res.json(rows);
     } catch (error) {
         logger.error('Admin: Schema Error', error);
@@ -61,12 +97,12 @@ router.get('/schema/:table', checkAuth('admin'), async (req, res) => {
     }
 });
 
-// 3. Get Data (with pagination usually, but simple select * for now)
 router.get('/data/:table', checkAuth('admin'), async (req, res) => {
     try {
-        const { table } = req.params;
-        const limit = 2000; // Increased limit to ensure client-side search works for now
-        const [rows] = await pool.query(`SELECT * FROM ?? ORDER BY 1 DESC LIMIT ${limit}`, [table]);
+        const [rows] = await pool.query(
+            `SELECT * FROM ?? ORDER BY 1 DESC LIMIT 2000`,
+            [req.params.table]
+        );
         res.json(rows);
     } catch (error) {
         logger.error('Admin: Get Data Error', error);
@@ -74,24 +110,12 @@ router.get('/data/:table', checkAuth('admin'), async (req, res) => {
     }
 });
 
-// 4. Update Row
 router.put('/data/:table/:pk/:val', checkAuth('admin'), async (req, res) => {
     try {
         const { table, pk, val } = req.params;
-        const updates = req.body; // { col: val, col2: val }
+        const updates = req.body;
 
-        // Special handling for manual users password hashing
         if (table === 'usuarios_impresion_manual' && updates.password_hash) {
-            // Only hash if it doesn't look like a bcrypt hash (basic check) or just always hash if changed.
-            // Since admin panel sends plain text, we hash it.
-            // But if we edit other fields and unchanged password is sent back... AdminPanel.jsx sends all fields.
-            // AdminPanel.jsx sends the "row" data. If password_hash is already hashed in DB, it sends the hash back.
-            // Problem: If we re-hash the hash, it breaks.
-            // Fix: Check if value changed? AdminPanel sends all data.
-            // Smart Fix: If the value starts with '$2b$', assume it's already hashed and skip?
-            // Or better: In AdminPanel, we shouldn't send password field unless changed.
-            // But `AdminPanel.jsx` is generic.
-            // Decision: For this specific tool, if the length of password_hash is < 50, assume plain text. Bcrypt is 60 chars.
             if (updates.password_hash.length < 50) {
                 updates.password_hash = await bcrypt.hash(updates.password_hash, 10);
             }
@@ -101,7 +125,6 @@ router.put('/data/:table/:pk/:val', checkAuth('admin'), async (req, res) => {
 
         const setClause = Object.keys(updates).map(k => `${k} = ?`).join(', ');
         const values = Object.values(updates);
-
         await pool.query(`UPDATE ?? SET ${setClause} WHERE ?? = ?`, [table, ...values, pk, val]);
         res.json({ success: true });
     } catch (error) {
@@ -110,7 +133,6 @@ router.put('/data/:table/:pk/:val', checkAuth('admin'), async (req, res) => {
     }
 });
 
-// 5. Delete Row
 router.delete('/data/:table/:pk/:val', checkAuth('admin'), async (req, res) => {
     try {
         const { table, pk, val } = req.params;
@@ -122,44 +144,33 @@ router.delete('/data/:table/:pk/:val', checkAuth('admin'), async (req, res) => {
     }
 });
 
-// 6. Create Row
 router.post('/data/:table', checkAuth('admin'), async (req, res) => {
     try {
         const { table } = req.params;
         const data = req.body;
 
-        // Special handling for manual users password hashing
         if (table === 'usuarios_impresion_manual' && data.password_hash) {
             data.password_hash = await bcrypt.hash(data.password_hash, 10);
         }
 
         const cols = Object.keys(data).join(', ');
         const placeholders = Object.keys(data).map(() => '?').join(', ');
-        const values = Object.values(data);
-
-        await pool.query(`INSERT INTO ?? (${cols}) VALUES (${placeholders})`, [table, ...values]);
+        await pool.query(`INSERT INTO ?? (${cols}) VALUES (${placeholders})`, [table, ...Object.values(data)]);
         res.json({ success: true });
     } catch (error) {
         logger.error('Admin: Insert Error', error);
         res.status(500).json({ error: error.message });
     }
-
 });
 
-// 7. Reprint Ticket
 router.post('/reprint', checkAuth('admin'), async (req, res) => {
     try {
         const { name, date, time, type, ticket_number } = req.body;
-
         if (!name || !date || !time || !type || !ticket_number) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
-
-        // Path to python script relative to backend folder
         const pythonScript = path.resolve(__dirname, '../python_core/reprint_ticket.py');
         const venvPython = path.resolve(__dirname, '../python_core/venv/bin/python');
-
-        // Escape arguments to prevent injection (basic)
         const args = [
             '--name', `"${name}"`,
             '--date', `"${date}"`,
@@ -167,40 +178,28 @@ router.post('/reprint', checkAuth('admin'), async (req, res) => {
             '--type', `"${type}"`,
             '--ticket_number', `"${ticket_number}"`
         ].join(' ');
-
         const command = `"${venvPython}" "${pythonScript}" ${args}`;
-
         logger.info(`Executing reprint: ${command}`);
-
         exec(command, (error, stdout, stderr) => {
             if (error) {
                 logger.error(`Reprint Error: ${error.message}`);
                 return res.status(500).json({ error: 'Failed to reprint ticket', details: stderr });
             }
-            if (stderr) {
-                logger.warn(`Reprint Stderr: ${stderr}`);
-            }
-            logger.info(`Reprint Output: ${stdout}`);
+            if (stderr) logger.warn(`Reprint Stderr: ${stderr}`);
             res.json({ success: true, message: 'Ticket sent to printer' });
         });
-
     } catch (error) {
         logger.error('Admin: Reprint Error', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-
-// --- SUPERADMIN ROUTES (RAW SQL) ---
+// --- RUTAS SUPERADMIN ---
 
 router.post('/query', checkAuth('superadmin'), async (req, res) => {
     try {
         const { sql } = req.body;
-        // Allow multiple statements? Maybe risky, but user asked for power.
-        // mysql2 pool needs 'multipleStatements: true' config for that, checking db.js later.
-        // For now single statement or whatever connection supports.
-
-        const [rows, fields] = await pool.query(sql);
+        const [rows] = await pool.query(sql);
         res.json({ success: true, results: rows });
     } catch (error) {
         logger.error('SuperAdmin: Query Error', error);

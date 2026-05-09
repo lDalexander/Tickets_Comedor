@@ -2,15 +2,25 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const logger = require('../utils/logger');
+const jwt = require('jsonwebtoken');
 
-// Middleware de seguridad simple (Mismo que AdminPanel)
+const JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'comedor_admin_secret';
+
 const verifyAdmin = (req, res, next) => {
     const secret = req.headers['x-admin-secret'];
-    if (secret === 'admin123') {
-        next();
-    } else {
-        res.status(403).json({ error: 'Unauthorized' });
+    if (secret === 'admin123') return next();
+
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+            jwt.verify(authHeader.slice(7), JWT_SECRET);
+            return next();
+        } catch {
+            return res.status(401).json({ error: 'Token inválido o expirado' });
+        }
     }
+
+    res.status(403).json({ error: 'Unauthorized' });
 };
 
 // GET: Obtener toda la configuración
