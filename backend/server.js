@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const logger = require('./utils/logger');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const fs = require('fs');
@@ -16,7 +17,32 @@ dotenv.config();
 const app = express();
 const server = require('http').createServer(app);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5002;
+// En producción Nginx es la entrada pública; Express solo escucha en localhost
+const BIND_HOST = process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0';
+// Confiar en el primer proxy (Nginx) para que req.ip refleje la IP real del cliente
+app.set('trust proxy', 1);
+
+// Orígenes permitidos por CORS — configurar en /etc/comedor/secrets.env
+// Ejemplo: CORS_ORIGINS=http://150.36.200.252:5173,http://150.36.200.252:3000
+const ORIGENES_PERMITIDOS = [
+    ...(process.env.CORS_ORIGINS || '').split(','),
+    ...(process.env.CORS_EXTRA_ORIGINS || '').split(','),
+].map(o => o.trim()).filter(Boolean);
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Sin origin: Postman, curl, mismo servidor (proxy interno) → permitir
+        if (!origin || ORIGENES_PERMITIDOS.includes(origin)) {
+            callback(null, true);
+        } else {
+            logger.warn(`CORS bloqueado: origen no permitido — ${origin}`);
+            callback(new Error('Origen no permitido por CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+};
 
 // --- CONFIGURACIÓN DE LOGS ---
 // Asegurar que exista la carpeta de logs
@@ -26,21 +52,15 @@ if (!fs.existsSync(logsDir)) {
 }
 
 // --- CONFIGURACIÓN DE SOCKET.IO (TIEMPO REAL) ---
-// Permite la comunicación bidireccional para el "Live Terminal" del Dashboard
 const io = require('socket.io')(server, {
     cors: {
-        origin: "*", // Permitir acceso desde cualquier origen en red local
-        methods: ["GET", "POST"]
+        origin: corsOptions.origin,
+        methods: ['GET', 'POST'],
     }
 });
 
 // --- MIDDLEWARES ---
-// CORS: Permite peticiones desde otros dominios/puertos
-app.use(cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
-}));
+app.use(cors(corsOptions));
 
 // JSON Parser: Permite recibir datos en formato JSON en requests POST/PUT
 app.use(express.json());
@@ -56,10 +76,50 @@ app.use((req, res, next) => {
     next();
 });
 
+// --- RATE LIMITING ---
+// Ventana corta (1 min): el turno de almuerzo dura 30 min, un bloqueo largo
+// dejaría al personal sin poder imprimir su ticket.
+// Solo cuenta intentos FALLIDOS y se lleva por (IP + usuario), de modo que
+// alguien equivocando su contraseña no bloquea al resto de las terminales.
+const limitadorLogin = rateLimit({
+    windowMs: 60 * 1000,
+    max: 15,
+    skipSuccessfulRequests: true,
+    keyGenerator: (req) => {
+        const usuario = String(req.body?.username || '').trim().toLowerCase();
+        return `${ipKeyGenerator(req.ip)}:${usuario}`;
+    },
+    message: { error: 'Demasiados intentos fallidos. Espere 1 minuto.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+const limitadorTickets = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    message: { error: 'Demasiadas solicitudes de tickets.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+const limitadorGeneral = rateLimit({
+    windowMs: 60 * 1000,
+    max: 200,
+    message: { error: 'Límite de requests alcanzado. Intenta en un momento.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+app.use('/api/admin/login', limitadorLogin);
+app.use('/api/manual-tickets/login', limitadorLogin);
+app.use('/api/manual-tickets', limitadorTickets);
+app.use('/api', limitadorGeneral);
+
 // --- RUTAS (ENDPOINTS) ---
 app.use('/api/admin', require('./routes/adminRoutes')); // Rutas protegidas del Panel Admin
 app.use('/api/manual-tickets', require('./routes/manualTicketRoutes')); // Módulo de Tickets Manuales
 app.use('/api/config', require('./routes/configRoutes')); // Configuración del Sistema
+app.use('/api/almuerzos', require('./routes/almuerzoRoutes')); // Control de tiempo de almuerzo
 app.use('/api', dashboardRoutes); // Rutas públicas del Dashboard
 
 // Base de Datos (MySql)
@@ -254,8 +314,10 @@ async function checkNewRecords() {
     }
 }
 
-// Ejecutar polling cada 2000ms (2 segundos)
-setInterval(checkNewRecords, 2000);
+// Polling solo cuando el proceso arranca directamente (no en tests)
+if (require.main === module) {
+    setInterval(checkNewRecords, 2000);
+}
 
 // --- SERVIR FRONTEND ESTÁTICO (Producción) ---
 // Servir los archivos compilados de React/Vite
@@ -276,10 +338,14 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-    logger.info(`Server running on port ${PORT}`);
-    console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+    server.listen(PORT, BIND_HOST, () => {
+        logger.info(`Server running on ${BIND_HOST}:${PORT}`);
+        console.log(`Server running on ${BIND_HOST}:${PORT}`);
+    });
+}
+
+module.exports = { app, server, io };
 
 // Debugging: Log why the process is exiting
 process.on('exit', (code) => {

@@ -99,6 +99,17 @@ else
 fi
 
 # ---------------------------------------------------------
+# 3.1 CONTROL DE ALMUERZO: cerrar sesiones sin retorno
+# ---------------------------------------------------------
+echo "[3.1] Cerrando sesiones de almuerzo sin marcación de retorno..."
+VENV_PY="$PROJECT_DIR/backend/python_core/venv/bin/python"
+if [ -x "$VENV_PY" ]; then
+    "$VENV_PY" "$PROJECT_DIR/backend/python_core/cerrar_sesiones_almuerzo.py" 2>&1 | sed 's/^/   /'
+else
+    echo "   ⚠️ No se encontró el venv de Python; paso omitido."
+fi
+
+# ---------------------------------------------------------
 # 4. BACKEND API Check
 # ---------------------------------------------------------
 echo "[4] Verificando Backend API..."

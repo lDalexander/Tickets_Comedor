@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    LayoutDashboard, Ticket, Users, Shield, Settings, FileText,
+    LayoutDashboard, Ticket, Timer, Users, Shield, Settings, FileText,
     LogOut, Menu, X, ChevronRight
 } from 'lucide-react';
 
@@ -9,6 +9,7 @@ import { useAdminAuth } from '../../hooks/useAdminAuth';
 import AdminLogin from './AdminLogin';
 import ResumenSection from './sections/ResumenSection';
 import RegistrosSection from './sections/RegistrosSection';
+import AlmuerzosSection from './sections/AlmuerzosSection';
 import EmpleadosSection from './sections/EmpleadosSection';
 import OperadoresSection from './sections/OperadoresSection';
 import ConfiguracionSection from './sections/ConfiguracionSection';
@@ -17,6 +18,7 @@ import AuditoriaSection from './sections/AuditoriaSection';
 const SECTIONS = [
     { id: 'resumen', label: 'Resumen', icon: LayoutDashboard, color: '#38bdf8' },
     { id: 'registros', label: 'Registros', icon: Ticket, color: '#7dd3fc' },
+    { id: 'almuerzos', label: 'Almuerzos', icon: Timer, color: '#f472b6' },
     { id: 'empleados', label: 'Empleados', icon: Users, color: '#10b981' },
     { id: 'operadores', label: 'Operadores', icon: Shield, color: '#a78bfa' },
     { id: 'configuracion', label: 'Configuración', icon: Settings, color: '#f59e0b' },
@@ -26,6 +28,7 @@ const SECTIONS = [
 const SECTION_LABELS = {
     resumen: 'Resumen del Sistema',
     registros: 'Historial de Registros',
+    almuerzos: 'Control de Tiempo de Almuerzo',
     empleados: 'Gestión de Empleados',
     operadores: 'Operadores del Sistema',
     configuracion: 'Configuración',
@@ -170,7 +173,7 @@ export default function AdminV2Panel() {
     return (
         <div style={{
             display: 'flex',
-            minHeight: '100vh',
+            minHeight: '100dvh',
             background: '#0b1222',
             fontFamily: "'Inter', sans-serif",
             position: 'relative',
@@ -183,7 +186,7 @@ export default function AdminV2Panel() {
                 borderRight: '1px solid rgba(255,255,255,0.06)',
                 position: 'sticky',
                 top: 0,
-                height: '100vh',
+                height: '100dvh',
                 overflowY: 'auto',
                 display: 'none',
             }} id="sidebar-desktop">
@@ -195,18 +198,23 @@ export default function AdminV2Panel() {
                 <div
                     onClick={() => setSidebarOpen(false)}
                     style={{
-                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-                        zIndex: 40, backdropFilter: 'blur(4px)',
+                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+                        zIndex: 40,
                     }}
                 />
             )}
             <div style={{
                 position: 'fixed', top: 0, left: 0, bottom: 0, width: '260px',
-                background: 'rgba(11,18,34,0.99)',
+                background: '#0b1222',
                 borderRight: '1px solid rgba(255,255,255,0.08)',
                 zIndex: 50,
                 transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
-                transition: 'transform 0.25s ease',
+                transition: 'transform 0.25s ease, visibility 0.25s ease',
+                /* Cuando está cerrado: ocultar el pintado para que Chromium/Android
+                   no deje una capa de compositing "fantasma" cuyo texto del menú
+                   se superpone sobre el contenido */
+                visibility: sidebarOpen ? 'visible' : 'hidden',
+                pointerEvents: sidebarOpen ? 'auto' : 'none',
                 overflowY: 'auto',
             }}>
                 <Sidebar mobile />
@@ -215,14 +223,15 @@ export default function AdminV2Panel() {
             {/* Contenido principal */}
             <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 {/* Header */}
-                <header style={{
+                <header id="admin-header" style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '1rem',
                     padding: '0.85rem 1.5rem',
                     borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    background: 'rgba(11,18,34,0.8)',
-                    backdropFilter: 'blur(12px)',
+                    /* Fondo sólido (sin backdrop-filter): un header sticky con
+                       blur corrompe el compositing GPU en Android/Chromium */
+                    background: '#0d1526',
                     position: 'sticky',
                     top: 0,
                     zIndex: 10,
@@ -257,6 +266,7 @@ export default function AdminV2Panel() {
                 <div style={{ flex: 1, padding: '1.5rem', maxWidth: '1200px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
                     {active === 'resumen' && <ResumenSection {...sectionProps} />}
                     {active === 'registros' && <RegistrosSection {...sectionProps} />}
+                    {active === 'almuerzos' && <AlmuerzosSection {...sectionProps} />}
                     {active === 'empleados' && <EmpleadosSection {...sectionProps} />}
                     {active === 'operadores' && <OperadoresSection {...sectionProps} />}
                     {active === 'configuracion' && <ConfiguracionSection {...sectionProps} />}
@@ -270,6 +280,10 @@ export default function AdminV2Panel() {
                     #sidebar-desktop { display: block !important; }
                     #menu-toggle { display: none !important; }
                     #user-label { display: block !important; }
+                }
+                @media (max-width: 767px) {
+                    /* En móvil, header no-sticky: evita la capa GPU del scroll */
+                    #admin-header { position: static !important; }
                 }
                 * { box-sizing: border-box; }
                 ::-webkit-scrollbar { width: 6px; height: 6px; }

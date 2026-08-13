@@ -3,7 +3,18 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --testEnvironment=node --runInBand",
+    "test:watch": "jest --watch --runInBand",
+    "test:coverage": "jest --coverage --runInBand",
+    "test:integration": "jest --testEnvironment=node --runInBand --testPathIgnorePatterns=/node_modules/ --testMatch=\"**/tests/**/*.integration.test.js\""
+  },
+  "jest": {
+    "setupFiles": ["./tests/setup.js"],
+    "testEnvironment": "node",
+    "testTimeout": 15000,
+    "testMatch": ["**/tests/**/*.test.js"],
+    "//": "Los *.integration.test.js necesitan un MySQL real (crean y borran su propia BD); se corren aparte con npm run test:integration",
+    "testPathIgnorePatterns": ["/node_modules/", "\\.integration\\.test\\.js$"]
   },
   "keywords": [],
   "author": "",
@@ -15,9 +26,14 @@
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.1",
     "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.16.2",
     "socket.io": "^4.8.3",
     "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
   }
 }

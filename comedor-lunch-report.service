@@ -1,0 +1,17 @@
+[Unit]
+Description=Reporte diario de control de tiempo de almuerzo (correo SMTP)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=john
+WorkingDirectory=/home/john/comedor/Tickets_Comedor/backend/python_core
+ExecStart=/home/john/comedor/Tickets_Comedor/backend/python_core/venv/bin/python send_lunch_report.py
+
+# Salida a journald: revisar con `journalctl -u comedor-lunch-report`
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

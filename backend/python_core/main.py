@@ -91,7 +91,9 @@ def main():
             print(f"🌟 VIP detectado ({nombre_zk}): Omitiendo filtro anti-rebote.")
 
         # --- VERIFICACIÓN DE HORARIO ---
-        permitido, msg_horario = db.verificar_horario()
+        # Se pasa el ID para que quien tenga una salida a almuerzo abierta pueda
+        # marcar su retorno dentro de la ventana extendida (ver database.py).
+        permitido, msg_horario = db.verificar_horario(user_id_str)
         if not permitido:
             print(f"⛔ {msg_horario} - Acceso denegado para {nombre_zk}")
             return
@@ -107,7 +109,7 @@ def main():
         print(f"\n--> Asistencia: {nombre_completo}")
         
         # Registrar evento en BD
-        resultado, ticket_number = db.registrar_evento(event.user_id, nombre_completo)
+        resultado, ticket_number, info = db.registrar_evento(event.user_id, nombre_completo)
 
         # Manejo de Errores Críticos (BD caída)
         if resultado == "ERROR":
@@ -116,6 +118,16 @@ def main():
             logging.error("Iniciando Mantenimiento Automático por fallo en DB.")
             printer.imprimir_ticket_mantenimiento()
             printer.enviar_correo("🚨 FALLO CRÍTICO - SISTEMA COMEDOR", "Fallo al registrar evento en BD.")
+            return
+
+        # Retorno de almuerzo: solo se contabiliza el tiempo, no se imprime nada.
+        if resultado == "RETORNO ALMUERZO":
+            minutos, segundos = divmod(info.get('segundos_usados', 0), 60)
+            excedido = info.get('estado') == 'EXCEDIDO'
+            icono = "⚠️" if excedido else "✅"
+            detalle = "EXCEDIÓ EL TIEMPO" if excedido else "a tiempo"
+            print(f"{icono} Retorno de almuerzo: {nombre_completo} — {minutos}:{segundos:02d} min ({detalle})")
+            sys.stdout.flush()
             return
 
         # Imprimir Ticket si la impresora está lista

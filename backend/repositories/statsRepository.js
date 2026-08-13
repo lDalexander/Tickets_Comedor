@@ -38,6 +38,25 @@ const VISITA_TICKETS = "('TICKET VISITA')";
 const EXTRA_TICKETS = "('Ticket Extra', 'TICKET EXTRA')";
 const TERCERO_TICKETS = "('TICKET TERCERO')";
 
+let _cacheEspeciales = null;
+let _cacheEspecialesTs = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function obtenerEspecialesCacheado() {
+    if (_cacheEspeciales && (Date.now() - _cacheEspecialesTs < CACHE_TTL)) {
+        return _cacheEspeciales;
+    }
+    const rows = await db.query(
+        'SELECT zk_id, tipo_especial FROM usuarios WHERE tipo_especial IS NOT NULL'
+    );
+    _cacheEspeciales = {
+        vips:     rows.filter(r => r.tipo_especial === 'VIP').map(r => String(r.zk_id)),
+        gerencia: rows.filter(r => r.tipo_especial === 'GERENCIA').map(r => String(r.zk_id))
+    };
+    _cacheEspecialesTs = Date.now();
+    return _cacheEspeciales;
+}
+
 class StatsRepository {
     async getSummary(req) {
         const { sql: dateCondition, params } = getDateFilter(req);
@@ -71,7 +90,9 @@ class StatsRepository {
             params
         );
         const popRows = await db.query(
-            `SELECT descripcion, COUNT(*) as count FROM registros WHERE ${dateCondition} AND descripcion NOT IN ('INTENTO DE DUPLICADO', 'Intento de Duplicado') GROUP BY descripcion ORDER BY count DESC LIMIT 1`,
+            // Solo tipos de ticket: 'RETORNO ALMUERZO' es una marcación de control de
+            // tiempo, no un consumo, y con ~60 al día distorsionaría el tipo más popular.
+            `SELECT descripcion, COUNT(*) as count FROM registros WHERE ${dateCondition} AND descripcion IN ${ALL_TICKETS} GROUP BY descripcion ORDER BY count DESC LIMIT 1`,
             params
         );
 
@@ -115,7 +136,7 @@ class StatsRepository {
     }
 
     async getHistory(req) {
-        const { startDate, endDate, type } = req.query;
+        const { startDate, endDate, type, page, pageSize } = req.query;
         let conditions = [];
         let params = [];
         if (startDate && endDate) {
@@ -135,11 +156,41 @@ class StatsRepository {
             conditions.push(`descripcion IN ${ALL_TICKETS}`);
         }
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        // Modo paginado: si el cliente envía `page`, devolvemos {data, total, page, pageSize}.
+        // Si no, se mantiene el comportamiento antiguo (array plano con LIMIT 100).
+        if (page !== undefined) {
+            const ALLOWED_SIZES = [20, 50, 100, 250];
+            let size = parseInt(pageSize, 10);
+            if (!ALLOWED_SIZES.includes(size)) size = 20;
+            let pageNum = parseInt(page, 10);
+            if (!Number.isFinite(pageNum) || pageNum < 1) pageNum = 1;
+            const offset = (pageNum - 1) * size;
+
+            const countRows = await db.query(
+                `SELECT COUNT(*) as total FROM registros ${whereClause}`,
+                params
+            );
+            const total = Number(countRows[0]?.total || 0);
+
+            // size y offset son enteros ya validados -> se interpolan directamente
+            // (MySQL no acepta placeholders en LIMIT/OFFSET con sentencias preparadas).
+            const dataSql = `
+                SELECT id, nombre as user, hora as time, fecha as date, descripcion as type, numero_ticket
+                FROM registros
+                ${whereClause}
+                ORDER BY id DESC
+                LIMIT ${size} OFFSET ${offset}
+            `;
+            const data = await db.query(dataSql, params);
+            return { data, total, page: pageNum, pageSize: size };
+        }
+
         const sql = `
-            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type, numero_ticket 
-            FROM registros 
+            SELECT id, nombre as user, hora as time, fecha as date, descripcion as type, numero_ticket
+            FROM registros
             ${whereClause}
-            ORDER BY id DESC 
+            ORDER BY id DESC
             LIMIT 100
         `;
         return await db.query(sql, params);
@@ -173,3 +224,4 @@ class StatsRepository {
 }
 
 module.exports = new StatsRepository();
+module.exports.obtenerEspecialesCacheado = obtenerEspecialesCacheado;

@@ -4,12 +4,30 @@ from mysql.connector import pooling
 from mysql.connector.connection import MySQLConnection
 from typing import Tuple, Dict, Optional, Any, List
 import os
+import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # Cargar variables simulando el entorno si se ejecuta directo
 load_dotenv()
+
+# Valores por defecto del control de tiempo de almuerzo (migración 004).
+# Se usan solo si la clave no está en la tabla `configuracion`.
+CONFIG_ALMUERZO_DEFAULTS: Dict[str, str] = {
+    'almuerzo_control_activo':      'true',
+    'almuerzo_minutos_permitidos':  '30',
+    'almuerzo_tolerancia_minutos':  '0',
+    'almuerzo_retorno_min_minutos': '8',
+    'almuerzo_horario_fin_retorno': '15:30',
+    'almuerzo_excluir_ids':         '',
+}
+
+# Descripciones que representan un almuerzo ya consumido
+TIPOS_TICKET_CONSUMO = ('TICKET ALMUERZO', 'TICKET EXTRA', 'TICKET DIETA', 'TICKET GERENCIA')
+# Descripciones que abren una sesión de almuerzo (miden tiempo)
+TIPOS_ABREN_SESION = ('TICKET ALMUERZO', 'TICKET DIETA', 'TICKET GERENCIA')
+RETORNO_ALMUERZO = 'RETORNO ALMUERZO'
 
 class Database:
     """
@@ -43,6 +61,13 @@ class Database:
         # Identificadores especiales para lógica de negocio
         self.IDS_VIPS = ['14', '27']
         self.IDS_CON_ESPECIAL = ['16', '119', '120']
+
+        # Caché de la tabla `configuracion`. Cada evento del biométrico necesita
+        # leerla 2-3 veces (horario, umbrales, exclusiones); con TTL corto
+        # evitamos consultas repetidas sin perder capacidad de ajuste en vivo.
+        self._config_cache: Dict[str, str] = {}
+        self._config_cache_ts: float = 0.0
+        self.CONFIG_TTL_SEGUNDOS = 60
 
     def get_connection(self) -> MySQLConnection:
         """Establece y retorna una nueva conexión a MySQL."""
@@ -122,14 +147,170 @@ class Database:
                 break # Hueco encontrado
         return ticket_number
 
-    def registrar_evento(self, user_id: str, nombre: str) -> Tuple[str, int]:
+    # ------------------------------------------------------------------
+    # CONFIGURACIÓN (con caché de corta duración)
+    # ------------------------------------------------------------------
+
+    def _leer_configuracion(self, cursor: Any) -> Dict[str, str]:
+        """
+        Devuelve la tabla `configuracion` como dict, cacheada por CONFIG_TTL_SEGUNDOS.
+        Las claves ausentes del control de almuerzo se rellenan con sus defaults.
+        """
+        ahora = time.time()
+        if self._config_cache and (ahora - self._config_cache_ts) < self.CONFIG_TTL_SEGUNDOS:
+            return self._config_cache
+
+        cursor.execute("SELECT clave, valor FROM configuracion")
+        config = dict(CONFIG_ALMUERZO_DEFAULTS)
+        config.update({row[0]: row[1] for row in cursor.fetchall()})
+
+        self._config_cache = config
+        self._config_cache_ts = ahora
+        return config
+
+    @staticmethod
+    def _config_int(config: Dict[str, str], clave: str) -> int:
+        """Lee un entero de la configuración, cayendo al default si el valor es basura."""
+        try:
+            return int(str(config.get(clave, CONFIG_ALMUERZO_DEFAULTS.get(clave, '0'))).strip())
+        except (TypeError, ValueError):
+            logging.warning(f"Config '{clave}' no es un número válido; usando default.")
+            return int(CONFIG_ALMUERZO_DEFAULTS.get(clave, '0'))
+
+    def _mide_tiempo_almuerzo(self, config: Dict[str, str], user_id_str: str) -> bool:
+        """
+        True si a este usuario se le controla el tiempo de almuerzo.
+        Los IDs excluidos (VIPs con derecho a ticket extra) quedan fuera para no
+        aparecer como SIN_RETORNO en los reportes.
+        """
+        if str(config.get('almuerzo_control_activo', 'true')).lower() != 'true':
+            return False
+        excluidos = {p.strip() for p in str(config.get('almuerzo_excluir_ids', '')).split(',') if p.strip()}
+        return user_id_str not in excluidos
+
+    # ------------------------------------------------------------------
+    # SESIONES DE ALMUERZO (tabla almuerzo_sesiones, migración 004)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _segundos_desde_medianoche(momento: datetime) -> int:
+        return momento.hour * 3600 + momento.minute * 60 + momento.second
+
+    def _obtener_sesion(self, cursor: Any, user_id_str: str, fecha: Any) -> Optional[Dict[str, Any]]:
+        """Devuelve la sesión de almuerzo del usuario para esa fecha, o None."""
+        cursor.execute(
+            "SELECT id, hora_salida, hora_retorno FROM almuerzo_sesiones WHERE user_id = %s AND fecha = %s",
+            (user_id_str, fecha)
+        )
+        fila = cursor.fetchone()
+        if not fila:
+            return None
+        return {'id': fila[0], 'hora_salida': fila[1], 'hora_retorno': fila[2]}
+
+    def _abrir_sesion(self, cursor: Any, user_id_str: str, nombre: str, fecha: Any,
+                      hora: Any, tipo_ticket: str, numero_ticket: Optional[int]) -> None:
+        """
+        Registra la salida al almuerzo. El ON DUPLICATE KEY no-op hace la operación
+        idempotente: si ya existe una sesión del día se conserva la hora original.
+        """
+        cursor.execute(
+            """INSERT INTO almuerzo_sesiones
+                   (user_id, nombre, fecha, hora_salida, tipo_ticket, numero_ticket)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE id = id""",
+            (user_id_str, nombre, fecha, hora, tipo_ticket, numero_ticket)
+        )
+
+    def _cerrar_sesion(self, cursor: Any, config: Dict[str, str], sesion_id: int,
+                       hora_retorno: Any, segundos_usados: int) -> str:
+        """
+        Cierra la sesión calculando el estado. El límite es estricto: se excede al
+        superar (permitidos + tolerancia) minutos, comparando en segundos para que
+        un retorno a 30:40 no se trunque a 30 min.
+        Retorna el estado asignado.
+        """
+        permitidos = self._config_int(config, 'almuerzo_minutos_permitidos')
+        tolerancia = self._config_int(config, 'almuerzo_tolerancia_minutos')
+        limite_segundos = (permitidos + tolerancia) * 60
+        estado = 'EXCEDIDO' if segundos_usados > limite_segundos else 'A_TIEMPO'
+
+        # El `hora_retorno IS NULL` protege contra un doble cierre por carrera.
+        cursor.execute(
+            """UPDATE almuerzo_sesiones
+                  SET hora_retorno = %s, segundos_usados = %s, estado = %s
+                WHERE id = %s AND hora_retorno IS NULL""",
+            (hora_retorno, segundos_usados, estado, sesion_id)
+        )
+        return estado
+
+    def tiene_sesion_abierta(self, user_id: str) -> bool:
+        """
+        True si el usuario salió a almorzar hoy y todavía no marcó su retorno.
+        Lo usa el worker para ampliar la ventana horaria antes de rechazar la marcación.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            config = self._leer_configuracion(cursor)
+            if not self._mide_tiempo_almuerzo(config, str(user_id)):
+                return False
+            sesion = self._obtener_sesion(cursor, str(user_id), datetime.now().date())
+            return bool(sesion and sesion['hora_retorno'] is None)
+        except Exception as e:
+            logging.error(f"Error consultando sesión abierta de {user_id}: {e}")
+            return False
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
+
+    def cerrar_sesiones_colgadas(self, fecha: Optional[Any] = None) -> int:
+        """
+        Marca como SIN_RETORNO las sesiones que quedaron abiertas.
+        Sin `fecha` procesa todos los días anteriores a hoy (uso en el mantenimiento
+        diario); con `fecha` procesa solo ese día. Retorna cuántas cerró.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            if fecha is None:
+                cursor.execute(
+                    """UPDATE almuerzo_sesiones SET estado = 'SIN_RETORNO'
+                        WHERE estado = 'EN_ALMUERZO' AND hora_retorno IS NULL AND fecha < CURDATE()"""
+                )
+            else:
+                cursor.execute(
+                    """UPDATE almuerzo_sesiones SET estado = 'SIN_RETORNO'
+                        WHERE estado = 'EN_ALMUERZO' AND hora_retorno IS NULL AND fecha = %s""",
+                    (fecha,)
+                )
+            afectadas = cursor.rowcount
+            conn.commit()
+            if afectadas:
+                logging.info(f"Sesiones de almuerzo marcadas SIN_RETORNO: {afectadas}")
+            return afectadas
+        except Exception as e:
+            logging.error(f"Error cerrando sesiones colgadas: {e}")
+            return 0
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
+
+    def registrar_evento(self, user_id: str, nombre: str) -> Tuple[str, Optional[int], Dict[str, Any]]:
         """
         Registra el evento de asistencia en la base de datos.
-        Determina si es Almuerzo, Dieta, Extra o Duplicado.
-        Retorna: (tipo_evento, numero_ticket)
+        Determina si es Almuerzo, Dieta, Extra, Retorno de almuerzo o Duplicado.
+        Retorna: (tipo_evento, numero_ticket, info)
+
+        `info` trae los datos del retorno cuando aplica:
+        {'segundos_usados': int, 'estado': 'A_TIEMPO'|'EXCEDIDO', 'hora_salida': str}
         """
         conn = None
         tipo_evento = "ERROR"
+        info: Dict[str, Any] = {}
         user_id_str = str(user_id)
         es_vip = user_id_str in self.IDS_VIPS
         es_especial = user_id_str in self.IDS_CON_ESPECIAL
@@ -137,13 +318,17 @@ class Database:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             ahora = datetime.now()
             fecha_hoy = ahora.date()
+
+            config = self._leer_configuracion(cursor)
+            mide_tiempo = self._mide_tiempo_almuerzo(config, user_id_str)
 
             es_dieta_seleccion = self._verificar_menu(cursor, user_id_str, fecha_hoy)
             ya_comio = self._es_duplicado(cursor, user_id_str, fecha_hoy)
 
+            sesion = None
             if not ya_comio:
                 if es_especial:
                     tipo_evento = "TICKET GERENCIA"
@@ -152,25 +337,55 @@ class Database:
                 else:
                     tipo_evento = "TICKET ALMUERZO"
             else:
-                if es_vip:
+                # Ya tiene ticket hoy: puede ser el retorno del almuerzo o un duplicado real.
+                sesion = self._obtener_sesion(cursor, user_id_str, fecha_hoy) if mide_tiempo else None
+                segundos_usados = None
+                if sesion and sesion['hora_retorno'] is None and sesion['hora_salida'] is not None:
+                    # hora_salida llega como timedelta (segundos desde medianoche del mismo día)
+                    segundos_usados = self._segundos_desde_medianoche(ahora) - int(sesion['hora_salida'].total_seconds())
+
+                minimo_retorno = self._config_int(config, 'almuerzo_retorno_min_minutos') * 60
+                if segundos_usados is not None and segundos_usados >= minimo_retorno:
+                    tipo_evento = RETORNO_ALMUERZO
+                    info['segundos_usados'] = segundos_usados
+                elif es_vip:
                     tipo_evento = "TICKET EXTRA"
                 else:
+                    # Marcación demasiado pronto (reintento por ticket no impreso),
+                    # o sesión ya cerrada (tercera marcación en adelante).
                     tipo_evento = "INTENTO DE DUPLICADO"
 
-            ticket_number = self._get_siguiente_ticket(cursor, fecha_hoy)
-            
+            # El retorno no consume número de ticket: no se imprime nada.
+            ticket_number = None if tipo_evento == RETORNO_ALMUERZO else self._get_siguiente_ticket(cursor, fecha_hoy)
+
             # 4. Insertar el registro
             sql_insert = "INSERT INTO registros (user_id, nombre, fecha, hora, descripcion, numero_ticket) VALUES (%s, %s, %s, %s, %s, %s)"
             val_insert = (user_id_str, nombre, fecha_hoy, ahora.time(), tipo_evento, ticket_number)
             cursor.execute(sql_insert, val_insert)
+
+            # 5. Actualizar la sesión de almuerzo en la misma transacción
+            if tipo_evento == RETORNO_ALMUERZO:
+                info['estado'] = self._cerrar_sesion(
+                    cursor, config, sesion['id'], ahora.time(), info['segundos_usados']
+                )
+                info['hora_salida'] = str(sesion['hora_salida'])
+            elif mide_tiempo and tipo_evento in TIPOS_ABREN_SESION:
+                self._abrir_sesion(
+                    cursor, user_id_str, nombre, fecha_hoy, ahora.time(), tipo_evento, ticket_number
+                )
+
             conn.commit()
-            
-            logging.info(f"✅ REGISTRADO: {nombre} -> {tipo_evento} (N: {ticket_number})")
-            return tipo_evento, ticket_number
+
+            if tipo_evento == RETORNO_ALMUERZO:
+                minutos = info['segundos_usados'] // 60
+                logging.info(f"✅ RETORNO: {nombre} -> {minutos} min ({info['estado']})")
+            else:
+                logging.info(f"✅ REGISTRADO: {nombre} -> {tipo_evento} (N: {ticket_number})")
+            return tipo_evento, ticket_number, info
 
         except Exception as e:
             logging.error(f"Error BD al registrar evento: {e}")
-            return "ERROR", 0
+            return "ERROR", 0, info
         finally:
             if conn and conn.is_connected():
                 cursor.close()
@@ -301,30 +516,44 @@ class Database:
             if conn_db and conn_db.is_connected():
                 cursor.close()
                 conn_db.close()
-    def verificar_horario(self):
+    def verificar_horario(self, user_id: Optional[str] = None) -> Tuple[bool, str]:
         """
         Verifica si la hora actual está dentro del rango permitido en la configuración.
+
+        Si se pasa `user_id` y esa persona tiene una sesión de almuerzo abierta, se
+        acepta la marcación hasta `almuerzo_horario_fin_retorno` aunque ya haya
+        pasado `horario_fin`. Sin esta ventana extendida, quien saca ticket a las
+        13:50 y regresa a las 14:25 no quedaría registrado como retorno.
+
         Retorna: (permitido: bool, mensaje: str)
         """
         conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT clave, valor FROM configuracion")
-            rows = cursor.fetchall()
-            config = {row[0]: row[1] for row in rows}
+            config = self._leer_configuracion(cursor)
 
             if config.get('horario_activo') == 'true':
-                start = config.get('horario_inicio', '00:00')
-                end = config.get('horario_fin', '23:59')
-                
+                start = str(config.get('horario_inicio', '00:00'))[:5]
+                end = str(config.get('horario_fin', '23:59'))[:5]
+
                 # Obtener hora actual (Format HH:MM)
                 # Asumiendo hora local del sistema
                 now = datetime.now().strftime('%H:%M')
-                
-                if now < start or now > end:
+
+                if now < start:
                     return False, f"Fuera de Horario ({start}-{end})"
-            
+
+                if now > end:
+                    fin_retorno = str(config.get('almuerzo_horario_fin_retorno', end))[:5]
+                    if (user_id is not None
+                            and now <= fin_retorno
+                            and self._mide_tiempo_almuerzo(config, str(user_id))):
+                        sesion = self._obtener_sesion(cursor, str(user_id), datetime.now().date())
+                        if sesion and sesion['hora_retorno'] is None:
+                            return True, f"Ventana de retorno (hasta {fin_retorno})"
+                    return False, f"Fuera de Horario ({start}-{end})"
+
             return True, "OK"
 
         except Exception as e:
