@@ -58,7 +58,29 @@ beforeAll(async () => {
         INSERT INTO configuracion (clave, valor) VALUES
             ('almuerzo_control_activo', 'true'),
             ('almuerzo_minutos_permitidos', '30'),
-            ('almuerzo_tolerancia_minutos', '0')`);
+            ('almuerzo_tolerancia_minutos', '0'),
+            ('almuerzo_zonas_disponibles', 'BODEGA,LOGISTICA,SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO,ADMINISTRATIVOS'),
+            ('almuerzo_zonas_controladas', 'SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO'),
+            ('almuerzo_controlar_sin_zona', 'true')`);
+
+    // `usuarios` con zona: el repositorio hace LEFT JOIN contra ella.
+    // La colación debe coincidir con almuerzo_sesiones o el JOIN aborta.
+    await admin.query(`
+        CREATE TABLE usuarios (
+            zk_id VARCHAR(50) NOT NULL PRIMARY KEY,
+            nombre_completo VARCHAR(150) NOT NULL,
+            role VARCHAR(50) DEFAULT 'Operativo',
+            zona VARCHAR(20) DEFAULT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
+    await admin.query(`
+        INSERT INTO usuarios (zk_id, nombre_completo, role, zona) VALUES
+            ('101', 'ORELLANA ROGER',       'Operativo',      'SOLIDO'),
+            ('102', 'COELLO ADRIAN',        'Operativo',      'SOLIDO'),
+            ('103', 'ARAGON ERWIN',         'Operativo',      'LIQUIDO'),
+            ('104', 'MORA JOSE LUIS',       'Operativo',      NULL),
+            ('105', 'PENDIENTE DE CERRAR',  'Operativo',      'BODEGA'),
+            ('201', 'EN SU TIEMPO',         'Operativo',      'SOPLADO'),
+            ('202', 'YA SE PASO',           'Administrativo', 'ADMINISTRATIVOS')`);
 
     // El DDL sale del archivo de migración: si cambia, la prueba lo refleja
     const sqlMigracion = fs.readFileSync(MIGRACION, 'utf8');
@@ -222,6 +244,139 @@ describe('resumen', () => {
         expect(r.salidas).toBe(0);
         expect(r.retornos).toBe(0);
         expect(r.promedioSegundos).toBe(null);
+    });
+});
+
+describe('zonas', () => {
+    test('el listado trae la zona por JOIN con usuarios', async () => {
+        const filas = await repo.listarRango({ desde: AYER, hasta: HOY });
+        expect(porNombre(filas, 'ORELLANA ROGER').zona).toBe('SOLIDO');
+        expect(porNombre(filas, 'MORA JOSE LUIS').zona).toBe(null);
+        expect(porNombre(filas, 'YA SE PASO').zona).toBe('ADMINISTRATIVOS');
+    });
+
+    test('filtra por zona', async () => {
+        const solido = await repo.listar({ desde: AYER, hasta: HOY, zona: 'SOLIDO' });
+        expect(solido.total).toBe(2);
+        expect(solido.data.map(f => f.nombre).sort()).toEqual(['COELLO ADRIAN', 'ORELLANA ROGER']);
+
+        // La comparación no distingue mayúsculas
+        const minusculas = await repo.listar({ desde: AYER, hasta: HOY, zona: 'liquido' });
+        expect(minusculas.total).toBe(1);
+    });
+
+    test('SIN_ZONA agrupa a los no clasificados', async () => {
+        const sinZona = await repo.listar({ desde: AYER, hasta: HOY, zona: 'SIN_ZONA' });
+        expect(sinZona.total).toBe(1);
+        expect(sinZona.data[0].nombre).toBe('MORA JOSE LUIS');
+    });
+
+    test('una zona con caracteres inválidos se ignora en vez de romper', async () => {
+        const res = await repo.listar({ desde: AYER, hasta: HOY, zona: "'; DROP TABLE usuarios; --" });
+        expect(res.total).toBe(7); // filtro ignorado, devuelve todo
+        const [tablas] = await admin.query("SHOW TABLES LIKE 'usuarios'");
+        expect(tablas).toHaveLength(1);
+    });
+
+    test('el resumen respeta el filtro de zona', async () => {
+        const r = await repo.resumen({ desde: AYER, hasta: HOY, zona: 'SOLIDO' });
+        expect(r.salidas).toBe(2);
+        const total = await repo.resumen({ desde: AYER, hasta: HOY });
+        expect(total.salidas).toBe(7);
+    });
+
+    test('configZonas devuelve catálogo, conteos y no clasificados', async () => {
+        const config = await repo.configZonas();
+        expect(config.zonas).toHaveLength(7);
+        const solido = config.zonas.find(z => z.zona === 'SOLIDO');
+        expect(solido).toEqual({ zona: 'SOLIDO', controlada: true, empleados: 2 });
+        const bodega = config.zonas.find(z => z.zona === 'BODEGA');
+        expect(bodega.controlada).toBe(false);
+        expect(config.sinZona).toBe(1);
+        expect(config.controlarSinZona).toBe(true);
+        expect(config.huerfanas).toEqual([]);
+    });
+
+    test('detecta zonas asignadas que no están en el catálogo', async () => {
+        await admin.query("UPDATE usuarios SET zona = 'PATIO' WHERE zk_id = '105'");
+        repo.invalidarConfig();
+        const config = await repo.configZonas();
+        expect(config.huerfanas).toEqual([{ zona: 'PATIO', empleados: 1 }]);
+        await admin.query("UPDATE usuarios SET zona = 'BODEGA' WHERE zk_id = '105'");
+    });
+
+    test('guardarConfigZonas normaliza y persiste', async () => {
+        const res = await repo.guardarConfigZonas({ controladas: ['solido', ' liquido '], controlarSinZona: false });
+        expect(res.ok).toBe(true);
+        expect(res.controladas).toEqual(['SOLIDO', 'LIQUIDO']);
+
+        const [filas] = await admin.query(
+            "SELECT valor FROM configuracion WHERE clave = 'almuerzo_zonas_controladas'");
+        expect(filas[0].valor).toBe('SOLIDO,LIQUIDO');
+
+        const config = await repo.configZonas();
+        expect(config.controlarSinZona).toBe(false);
+        expect(config.zonas.find(z => z.zona === 'SOPLADO').controlada).toBe(false);
+
+        // Restaurar
+        await repo.guardarConfigZonas({
+            controladas: ['SOLIDO', 'LIQUIDO', 'SOPLADO', 'MANTENIMIENTO'], controlarSinZona: true,
+        });
+    });
+
+    test('guardarConfigZonas rechaza zonas fuera del catálogo', async () => {
+        const res = await repo.guardarConfigZonas({ controladas: ['SOLIDO', 'PATIO'] });
+        expect(res.ok).toBe(false);
+        expect(res.motivo).toMatch(/PATIO/);
+
+        // No debe haber tocado nada
+        const config = await repo.configZonas();
+        expect(config.zonas.find(z => z.zona === 'SOLIDO').controlada).toBe(true);
+    });
+
+    test('guardarConfigZonas rechaza algo que no sea lista', async () => {
+        expect((await repo.guardarConfigZonas({ controladas: 'SOLIDO' })).ok).toBe(false);
+        expect((await repo.guardarConfigZonas({})).ok).toBe(false);
+    });
+
+    test('listarEmpleados pone primero a los no clasificados', async () => {
+        const filas = await repo.listarEmpleados({});
+        expect(filas).toHaveLength(7);
+        expect(filas[0].zona).toBe(null);   // MORA JOSE LUIS
+    });
+
+    test('listarEmpleados filtra por zona, texto y rol', async () => {
+        expect(await repo.listarEmpleados({ zona: 'SOLIDO' })).toHaveLength(2);
+        expect(await repo.listarEmpleados({ zona: 'SIN_ZONA' })).toHaveLength(1);
+        expect(await repo.listarEmpleados({ q: 'coello' })).toHaveLength(1);
+        expect(await repo.listarEmpleados({ q: '103' })).toHaveLength(1);
+        expect(await repo.listarEmpleados({ role: 'Administrativo' })).toHaveLength(1);
+    });
+
+    test('asignarZona actualiza a varios a la vez', async () => {
+        const res = await repo.asignarZona(['101', '102'], 'soplado');
+        expect(res.ok).toBe(true);
+        expect(res.actualizados).toBe(2);
+        expect(res.zona).toBe('SOPLADO');
+
+        const [filas] = await admin.query(
+            "SELECT zona FROM usuarios WHERE zk_id IN ('101','102')");
+        expect(filas.every(f => f.zona === 'SOPLADO')).toBe(true);
+
+        await repo.asignarZona(['101', '102'], 'SOLIDO');
+    });
+
+    test('asignarZona con null quita la zona', async () => {
+        await repo.asignarZona('105', null);
+        const [filas] = await admin.query("SELECT zona FROM usuarios WHERE zk_id = '105'");
+        expect(filas[0].zona).toBe(null);
+        await repo.asignarZona('105', 'BODEGA');
+    });
+
+    test('asignarZona valida entrada', async () => {
+        expect((await repo.asignarZona([], 'SOLIDO')).ok).toBe(false);
+        expect((await repo.asignarZona(['101'], 'PATIO')).motivo).toMatch(/no está en el catálogo/);
+        expect((await repo.asignarZona(['101'], 'zona; DROP TABLE usuarios')).ok).toBe(false);
     });
 });
 

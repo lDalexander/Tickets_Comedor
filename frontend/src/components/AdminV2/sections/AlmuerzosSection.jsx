@@ -157,6 +157,7 @@ function CierreManualModal({ fila, onClose, onSave }) {
 export default function AlmuerzosSection({ authHeaders, user }) {
     const [rango, setRango] = useState({ desde: hoyISO(), hasta: hoyISO() });
     const [estado, setEstado] = useState('');
+    const [zona, setZona] = useState('');
     const [busqueda, setBusqueda] = useState('');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
@@ -172,11 +173,19 @@ export default function AlmuerzosSection({ authHeaders, user }) {
     params.set('desde', rango.desde);
     params.set('hasta', rango.hasta);
     if (estado) params.set('estado', estado);
+    if (zona) params.set('zona', zona);
     if (busqueda.trim()) params.set('q', busqueda.trim());
     params.set('page', page);
     params.set('pageSize', pageSize);
 
+    // El resumen y el Excel comparten los filtros de alcance (fecha y zona),
+    // pero no los de vista (estado, búsqueda, paginación).
     const paramsResumen = new URLSearchParams({ desde: rango.desde, hasta: rango.hasta });
+    if (zona) paramsResumen.set('zona', zona);
+
+    // Catálogo de zonas para el selector
+    const { data: configZonas } = useSWR('/api/almuerzos/zonas', fetcher);
+    const zonasDisponibles = configZonas?.zonas ?? [];
 
     // Solo el día en curso necesita refresco automático: es el único con
     // sesiones abiertas cuyo cronómetro avanza.
@@ -303,6 +312,16 @@ export default function AlmuerzosSection({ authHeaders, user }) {
                     </select>
                 </div>
 
+                <select value={zona} onChange={e => aplicarFiltro(() => setZona(e.target.value))} style={filterInputSt}>
+                    <option value="">Todas las zonas</option>
+                    <option value="SIN_ZONA">Sin zona asignada</option>
+                    {zonasDisponibles.map(z => (
+                        <option key={z.zona} value={z.zona}>
+                            {z.zona}{z.controlada ? '' : ' (sin control)'}
+                        </option>
+                    ))}
+                </select>
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <Search size={14} color="#64748b" />
                     <input
@@ -349,7 +368,7 @@ export default function AlmuerzosSection({ authHeaders, user }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                     <thead>
                         <tr style={{ background: 'rgba(15,23,42,0.8)' }}>
-                            {['Colaborador', 'ID', 'Fecha', 'Salida', 'Retorno', 'Tiempo', 'Estado', ...(esSuperadmin ? [''] : [])].map((h, i) => (
+                            {['Colaborador', 'Zona', 'Fecha', 'Salida', 'Retorno', 'Tiempo', 'Estado', ...(esSuperadmin ? [''] : [])].map((h, i) => (
                                 <th key={h || `acc${i}`} style={thSt}>{h}</th>
                             ))}
                         </tr>
@@ -367,6 +386,9 @@ export default function AlmuerzosSection({ authHeaders, user }) {
 
                                     <td style={{ ...tdSt, color: '#f1f5f9', maxWidth: '230px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         {fila.nombre}
+                                        <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: '#475569' }}>
+                                            #{fila.userId}
+                                        </span>
                                         {fila.cierreManual && (
                                             <span title={fila.observacion || 'Cierre manual'}
                                                 style={{ marginLeft: '0.4rem', fontSize: '0.68rem', color: '#818cf8', fontWeight: 600 }}>
@@ -381,7 +403,22 @@ export default function AlmuerzosSection({ authHeaders, user }) {
                                             </span>
                                         )}
                                     </td>
-                                    <td style={{ ...tdSt, color: '#64748b' }}>{fila.userId}</td>
+                                    <td style={tdSt}>
+                                        {fila.zona ? (
+                                            <span style={{
+                                                background: 'rgba(148,163,184,0.12)', color: '#94a3b8',
+                                                padding: '0.15rem 0.5rem', borderRadius: '999px',
+                                                fontSize: '0.7rem', fontWeight: 600, whiteSpace: 'nowrap',
+                                            }}>
+                                                {fila.zona}
+                                            </span>
+                                        ) : (
+                                            <span title="Sin zona asignada — clasifícalo en la sección Zonas"
+                                                style={{ fontSize: '0.7rem', color: '#f87171', cursor: 'help' }}>
+                                                sin zona
+                                            </span>
+                                        )}
+                                    </td>
                                     <td style={{ ...tdSt, color: '#94a3b8', whiteSpace: 'nowrap' }}>{fila.fecha}</td>
                                     <td style={{ ...tdSt, color: '#94a3b8', whiteSpace: 'nowrap' }}>{fila.horaSalida || '—'}</td>
                                     <td style={{ ...tdSt, color: fila.horaRetorno ? '#94a3b8' : '#475569', whiteSpace: 'nowrap' }}>

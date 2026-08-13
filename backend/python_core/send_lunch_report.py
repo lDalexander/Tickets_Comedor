@@ -50,7 +50,7 @@ from src.database import Database  # noqa: E402
 # ---------------------------------------------------------------------------
 SQL_SESIONES = """
     SELECT s.user_id, s.nombre, s.hora_salida, s.hora_retorno, s.numero_ticket,
-           s.tipo_ticket, s.cierre_manual, s.origen,
+           s.tipo_ticket, s.cierre_manual, s.origen, u.zona,
            COALESCE(
                s.segundos_usados,
                CASE WHEN s.fecha = CURDATE()
@@ -65,8 +65,9 @@ SQL_SESIONES = """
                ELSE 'EN_ALMUERZO'
            END AS estado_efectivo
       FROM almuerzo_sesiones s
+      LEFT JOIN usuarios u ON u.zk_id = s.user_id
      WHERE s.fecha = %s
-     ORDER BY s.hora_salida ASC
+     ORDER BY u.zona ASC, s.hora_salida ASC
 """
 
 ETIQUETA = {
@@ -199,11 +200,12 @@ class ReporteAlmuerzo:
     def csv_bytes(self):
         buffer = io.StringIO()
         w = csv.writer(buffer, delimiter=';')
-        w.writerow(['Fecha', 'ID', 'Colaborador', 'Ticket', 'Salida', 'Retorno',
+        w.writerow(['Fecha', 'ID', 'Colaborador', 'Zona', 'Ticket', 'Salida', 'Retorno',
                     'Tiempo (mm:ss)', 'Minutos', 'Estado', 'Origen', 'Cierre manual'])
         for f in self.filas:
             w.writerow([
-                self.fecha.isoformat(), f['user_id'], f['nombre'], f['numero_ticket'] or '',
+                self.fecha.isoformat(), f['user_id'], f['nombre'],
+                f['zona'] or '(sin zona)', f['numero_ticket'] or '',
                 hhmm(f['hora_salida']), hhmm(f['hora_retorno']), mmss(f['segundos']),
                 '' if f['segundos'] is None else int(f['segundos']) // 60,
                 ETIQUETA.get(f['estado_efectivo'], f['estado_efectivo']),
@@ -286,6 +288,8 @@ class ReporteAlmuerzo:
             filas_html += (
                 f'<tr style="background:{FONDO.get(estado, "#ffffff")};">'
                 + celda(f"{f['nombre']}{marca_inferido}{marca_manual}", 'font-size:13px;color:#111827;')
+                + celda(f['zona'] or '<span style="color:#dc2626;">sin zona</span>',
+                        'font-size:11px;color:#6b7280;white-space:nowrap;')
                 + celda(f['numero_ticket'] or '—', 'font-size:12px;color:#6b7280;')
                 + celda(hhmm(f['hora_salida']), 'font-size:13px;color:#374151;white-space:nowrap;')
                 + celda(hhmm(f['hora_retorno']), 'font-size:13px;color:#374151;white-space:nowrap;')
@@ -365,8 +369,8 @@ class ReporteAlmuerzo:
     </p>
 
     <table style="width:100%;border-collapse:collapse;">
-      {encabezados(['Colaborador', 'Ticket', 'Salida', 'Retorno', 'Tiempo', 'Estado'])}
-      {filas_html or '<tr><td colspan="6" style="padding:24px;text-align:center;color:#9ca3af;font-size:13px;">Sin salidas a almuerzo registradas este día</td></tr>'}
+      {encabezados(['Colaborador', 'Zona', 'Ticket', 'Salida', 'Retorno', 'Tiempo', 'Estado'])}
+      {filas_html or '<tr><td colspan="7" style="padding:24px;text-align:center;color:#9ca3af;font-size:13px;">Sin salidas a almuerzo registradas este día</td></tr>'}
     </table>
 
     {bloque('⚠️ Excedieron el tiempo', self.excedidos, '#dc2626', '#fef2f2',

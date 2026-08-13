@@ -344,6 +344,7 @@ Listado paginado de sesiones.
 | `fecha` | Un solo día (`YYYY-MM-DD`). Tiene prioridad sobre `desde`/`hasta` |
 | `desde`, `hasta` | Rango de fechas. Si vienen invertidos se ordenan automáticamente |
 | `estado` | Uno de los cinco estados de la tabla anterior. Un valor no válido se ignora |
+| `zona` | Zona de trabajo, o `SIN_ZONA` para los no clasificados. No distingue mayúsculas; un valor con caracteres inválidos se ignora |
 | `q` | Búsqueda por nombre o `zk_id` |
 | `page` | Número de página (default `1`) |
 | `pageSize` | `20`, `50`, `100` o `250` (default `50`; otro valor cae al default) |
@@ -369,7 +370,8 @@ Sin parámetros de fecha devuelve **el día de hoy**.
             "numeroTicket": 5,
             "cierreManual": false,
             "observacion": null,
-            "origen": "BIOMETRICO"
+            "origen": "BIOMETRICO",
+            "zona": "SOLIDO"
         }
     ],
     "total": 1,
@@ -471,6 +473,91 @@ Registra el retorno de alguien que olvidó marcar en el biométrico. La sesión 
 | 400 | Hora inválida, ID inválido, sesión inexistente, sesión ya cerrada, o retorno anterior a la salida |
 | 403 | Token de `admin` sin permiso `superadmin` |
 | 500 | Error interno |
+
+---
+
+### GET /api/almuerzos/zonas
+
+Catálogo de zonas de trabajo, cuáles se contabilizan y cuántos empleados tiene cada una.
+
+**Autenticación:** admin
+
+**Respuesta (200):**
+```json
+{
+    "zonas": [
+        { "zona": "SOLIDO", "controlada": true, "empleados": 40 },
+        { "zona": "ADMINISTRATIVOS", "controlada": false, "empleados": 22 }
+    ],
+    "sinZona": 114,
+    "controlarSinZona": true,
+    "huerfanas": []
+}
+```
+
+| Campo | Detalle |
+|-------|---------|
+| `sinZona` | Empleados sin clasificar |
+| `controlarSinZona` | Si a los no clasificados se les mide el tiempo |
+| `huerfanas` | Zonas presentes en `usuarios` pero ausentes del catálogo. No aparecen en el selector, por eso se reportan aparte |
+
+---
+
+### PUT /api/almuerzos/zonas
+
+Define a qué zonas se les controla el tiempo.
+
+**Autenticación:** **superadmin** — cambia la medición de toda la planta.
+
+**Body:**
+```json
+{ "controladas": ["SOLIDO", "LIQUIDO", "SOPLADO", "MANTENIMIENTO"], "controlarSinZona": true }
+```
+
+Los nombres se normalizan a mayúsculas y se eliminan repetidos. Solo se aceptan zonas del catálogo (`almuerzo_zonas_disponibles`): una zona desconocida devuelve 400 sin guardar nada.
+
+**Respuesta (200):** `{ "success": true, "controladas": ["SOLIDO", "LIQUIDO"] }`
+
+El worker toma el cambio en menos de un minuto (cachea la configuración 60 s).
+
+---
+
+### GET /api/almuerzos/empleados
+
+Listado de empleados con su zona, para la pantalla de clasificación. Los no clasificados salen primero.
+
+**Autenticación:** admin
+
+**Query params opcionales:** `zona` (o `SIN_ZONA`), `q` (nombre o ID), `role`
+
+**Respuesta (200):**
+```json
+{
+    "data": [
+        { "zkId": "101", "nombre": "ORELLANA ROGER", "role": "Operativo", "zona": null }
+    ],
+    "total": 1
+}
+```
+
+---
+
+### PUT /api/almuerzos/empleados/zona
+
+Asigna una zona a uno o varios empleados, hasta 500 por llamada.
+
+**Autenticación:** admin
+
+**Body:**
+```json
+{ "zkIds": ["101", "102", "103"], "zona": "SOPLADO" }
+```
+
+`zona: null` quita la zona asignada. La zona debe existir en el catálogo.
+
+**Respuesta (200):** `{ "success": true, "actualizados": 3, "zona": "SOPLADO" }`
+
+**Errores:** 400 (selección vacía, zona inválida o fuera del catálogo), 401/403, 500
 
 ---
 

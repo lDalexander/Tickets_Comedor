@@ -21,6 +21,8 @@ CONFIG_ALMUERZO_DEFAULTS: Dict[str, str] = {
     'almuerzo_retorno_min_minutos': '8',
     'almuerzo_horario_fin_retorno': '15:30',
     'almuerzo_excluir_ids':         '',
+    'almuerzo_zonas_controladas':   '',
+    'almuerzo_controlar_sin_zona':  'true',
 }
 
 # Descripciones que representan un almuerzo ya consumido
@@ -177,16 +179,53 @@ class Database:
             logging.warning(f"Config '{clave}' no es un número válido; usando default.")
             return int(CONFIG_ALMUERZO_DEFAULTS.get(clave, '0'))
 
-    def _mide_tiempo_almuerzo(self, config: Dict[str, str], user_id_str: str) -> bool:
+    @staticmethod
+    def _lista_config(config: Dict[str, str], clave: str) -> set:
+        """Convierte una clave 'A,B,C' de configuración en un set en mayúsculas."""
+        return {p.strip().upper() for p in str(config.get(clave, '')).split(',') if p.strip()}
+
+    def _obtener_zona(self, cursor: Any, user_id_str: str) -> Optional[str]:
+        """Zona de trabajo del empleado, o None si no tiene ninguna asignada."""
+        try:
+            cursor.execute("SELECT zona FROM usuarios WHERE zk_id = %s", (user_id_str,))
+            fila = cursor.fetchone()
+            if fila and fila[0]:
+                return str(fila[0]).strip().upper()
+        except Exception as e:
+            # La columna `zona` la agrega la migración 006. Si aún no está aplicada,
+            # no se rompe el flujo de impresión: se trata como "sin zona".
+            logging.warning(f"No se pudo leer la zona de {user_id_str}: {e}")
+        return None
+
+    def _mide_tiempo_almuerzo(self, cursor: Any, config: Dict[str, str], user_id_str: str) -> bool:
         """
         True si a este usuario se le controla el tiempo de almuerzo.
-        Los IDs excluidos (VIPs con derecho a ticket extra) quedan fuera para no
-        aparecer como SIN_RETORNO en los reportes.
+
+        Se descarta por tres motivos, en orden:
+          1. El control está apagado globalmente (`almuerzo_control_activo`).
+          2. El ID está en `almuerzo_excluir_ids` (VIPs con derecho a ticket extra).
+             Es un override individual: manda sobre la zona.
+          3. Su zona no está en `almuerzo_zonas_controladas` (ej. ADMINISTRATIVOS,
+             BODEGA y LOGISTICA no se contabilizan).
+
+        A quien no tiene zona asignada se le aplica `almuerzo_controlar_sin_zona`.
         """
         if str(config.get('almuerzo_control_activo', 'true')).lower() != 'true':
             return False
-        excluidos = {p.strip() for p in str(config.get('almuerzo_excluir_ids', '')).split(',') if p.strip()}
-        return user_id_str not in excluidos
+
+        if user_id_str in self._lista_config(config, 'almuerzo_excluir_ids'):
+            return False
+
+        controladas = self._lista_config(config, 'almuerzo_zonas_controladas')
+        # Sin zonas configuradas se mide a todos: evita que una configuración
+        # vacía o corrupta apague el módulo en silencio.
+        if not controladas:
+            return True
+
+        zona = self._obtener_zona(cursor, user_id_str)
+        if zona is None:
+            return str(config.get('almuerzo_controlar_sin_zona', 'true')).lower() == 'true'
+        return zona in controladas
 
     # ------------------------------------------------------------------
     # SESIONES DE ALMUERZO (tabla almuerzo_sesiones, migración 004)
@@ -253,7 +292,7 @@ class Database:
             conn = self.get_connection()
             cursor = conn.cursor()
             config = self._leer_configuracion(cursor)
-            if not self._mide_tiempo_almuerzo(config, str(user_id)):
+            if not self._mide_tiempo_almuerzo(cursor, config, str(user_id)):
                 return False
             sesion = self._obtener_sesion(cursor, str(user_id), datetime.now().date())
             return bool(sesion and sesion['hora_retorno'] is None)
@@ -323,7 +362,7 @@ class Database:
             fecha_hoy = ahora.date()
 
             config = self._leer_configuracion(cursor)
-            mide_tiempo = self._mide_tiempo_almuerzo(config, user_id_str)
+            mide_tiempo = self._mide_tiempo_almuerzo(cursor, config, user_id_str)
 
             es_dieta_seleccion = self._verificar_menu(cursor, user_id_str, fecha_hoy)
             ya_comio = self._es_duplicado(cursor, user_id_str, fecha_hoy)
@@ -548,7 +587,7 @@ class Database:
                     fin_retorno = str(config.get('almuerzo_horario_fin_retorno', end))[:5]
                     if (user_id is not None
                             and now <= fin_retorno
-                            and self._mide_tiempo_almuerzo(config, str(user_id))):
+                            and self._mide_tiempo_almuerzo(cursor, config, str(user_id))):
                         sesion = self._obtener_sesion(cursor, str(user_id), datetime.now().date())
                         if sesion and sesion['hora_retorno'] is None:
                             return True, f"Ventana de retorno (hasta {fin_retorno})"

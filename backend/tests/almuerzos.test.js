@@ -11,9 +11,14 @@ jest.mock('../repositories/almuerzoRepository', () => ({
     listarRango: jest.fn(),
     resumen: jest.fn(),
     cerrarManual: jest.fn(),
+    configZonas: jest.fn(),
+    guardarConfigZonas: jest.fn(),
+    listarEmpleados: jest.fn(),
+    asignarZona: jest.fn(),
     invalidarConfig: jest.fn(),
     obtenerConfig: jest.fn(),
     normalizarRango: jest.fn(),
+    parsearLista: jest.fn(),
     ESTADOS_VALIDOS: [],
 }));
 
@@ -54,6 +59,7 @@ const FILA = {
     cierre_manual: 0,
     observacion: null,
     origen: 'BIOMETRICO',
+    zona: 'SOLIDO',
 };
 
 beforeEach(() => jest.resetAllMocks());
@@ -110,6 +116,7 @@ describe('Almuerzos — GET /api/almuerzos', () => {
             cierreManual: false,
             observacion: null,
             origen: 'BIOMETRICO',
+            zona: 'SOLIDO',
         });
     });
 
@@ -275,5 +282,115 @@ describe('Almuerzos — POST /:id/cerrar-manual', () => {
             .set(auth(tokenSuper));
 
         expect(res.status).toBe(400);
+    });
+});
+
+describe('Almuerzos — zonas de trabajo', () => {
+    it('GET /zonas devuelve el catálogo con conteos', async () => {
+        almuerzoRepo.configZonas.mockResolvedValueOnce({
+            zonas: [
+                { zona: 'SOLIDO', controlada: true, empleados: 40 },
+                { zona: 'ADMINISTRATIVOS', controlada: false, empleados: 22 },
+            ],
+            sinZona: 114,
+            controlarSinZona: true,
+            huerfanas: [],
+        });
+
+        const res = await request(app).get('/api/almuerzos/zonas').set(auth(tokenAdmin));
+
+        expect(res.status).toBe(200);
+        expect(res.body.sinZona).toBe(114);
+        expect(res.body.zonas[0]).toEqual({ zona: 'SOLIDO', controlada: true, empleados: 40 });
+    });
+
+    it('PUT /zonas exige superadmin', async () => {
+        const res = await request(app)
+            .put('/api/almuerzos/zonas')
+            .set(auth(tokenAdmin))
+            .send({ controladas: ['SOLIDO'] });
+
+        expect(res.status).toBe(403);
+        expect(almuerzoRepo.guardarConfigZonas).not.toHaveBeenCalled();
+    });
+
+    it('PUT /zonas guarda las zonas controladas', async () => {
+        almuerzoRepo.guardarConfigZonas.mockResolvedValueOnce({
+            ok: true, controladas: ['SOLIDO', 'LIQUIDO'],
+        });
+
+        const res = await request(app)
+            .put('/api/almuerzos/zonas')
+            .set(auth(tokenSuper))
+            .send({ controladas: ['solido', 'liquido'], controlarSinZona: false });
+
+        expect(res.status).toBe(200);
+        expect(res.body.controladas).toEqual(['SOLIDO', 'LIQUIDO']);
+        expect(almuerzoRepo.guardarConfigZonas).toHaveBeenCalledWith({
+            controladas: ['solido', 'liquido'], controlarSinZona: false,
+        });
+    });
+
+    it('PUT /zonas rechaza una zona fuera del catálogo', async () => {
+        almuerzoRepo.guardarConfigZonas.mockResolvedValueOnce({
+            ok: false, motivo: 'Zonas no reconocidas: PATIO',
+        });
+
+        const res = await request(app)
+            .put('/api/almuerzos/zonas')
+            .set(auth(tokenSuper))
+            .send({ controladas: ['PATIO'] });
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/no reconocidas/);
+    });
+
+    it('GET /empleados serializa el listado', async () => {
+        almuerzoRepo.listarEmpleados.mockResolvedValueOnce([
+            { zk_id: '101', nombre_completo: 'ORELLANA ROGER', role: 'Operativo', zona: null },
+            { zk_id: '16', nombre_completo: 'QUINTERO BAYRON', role: 'Administrativo', zona: 'ADMINISTRATIVOS' },
+        ]);
+
+        const res = await request(app)
+            .get('/api/almuerzos/empleados?zona=SIN_ZONA&q=roger')
+            .set(auth(tokenAdmin));
+
+        expect(res.status).toBe(200);
+        expect(res.body.total).toBe(2);
+        expect(res.body.data[0]).toEqual({
+            zkId: '101', nombre: 'ORELLANA ROGER', role: 'Operativo', zona: null,
+        });
+        expect(almuerzoRepo.listarEmpleados).toHaveBeenCalledWith(
+            expect.objectContaining({ zona: 'SIN_ZONA', q: 'roger' })
+        );
+    });
+
+    it('PUT /empleados/zona asigna a varios a la vez', async () => {
+        almuerzoRepo.asignarZona.mockResolvedValueOnce({ ok: true, actualizados: 3, zona: 'SOPLADO' });
+
+        const res = await request(app)
+            .put('/api/almuerzos/empleados/zona')
+            .set(auth(tokenAdmin))
+            .send({ zkIds: ['101', '102', '103'], zona: 'SOPLADO' });
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ success: true, actualizados: 3, zona: 'SOPLADO' });
+    });
+
+    it('PUT /empleados/zona rechaza una selección vacía', async () => {
+        almuerzoRepo.asignarZona.mockResolvedValueOnce({ ok: false, motivo: 'Sin empleados seleccionados' });
+
+        const res = await request(app)
+            .put('/api/almuerzos/empleados/zona')
+            .set(auth(tokenAdmin))
+            .send({ zkIds: [], zona: 'SOPLADO' });
+
+        expect(res.status).toBe(400);
+    });
+
+    it('las rutas de zonas rechazan peticiones sin token', async () => {
+        expect((await request(app).get('/api/almuerzos/zonas')).status).toBe(403);
+        expect((await request(app).get('/api/almuerzos/empleados')).status).toBe(403);
+        expect((await request(app).put('/api/almuerzos/empleados/zona')).status).toBe(403);
     });
 });

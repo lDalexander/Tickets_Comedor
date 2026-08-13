@@ -502,6 +502,35 @@ EOF
 
 Mide cuánto tarda cada empleado en almorzar: la **primera** marcación del día imprime el ticket y registra la salida; la **segunda** registra el retorno. El tiempo permitido son 30 minutos estrictos.
 
+### A quién se le controla: zonas de trabajo
+
+Cada empleado tiene una `zona` (`usuarios.zona`, migración 006) y solo las zonas marcadas como controladas se contabilizan. Se administra en **AdminV2 → Zonas**.
+
+| Zona | ¿Se contabiliza? |
+|------|------------------|
+| `SOLIDO`, `LIQUIDO`, `SOPLADO`, `MANTENIMIENTO` | Sí |
+| `BODEGA`, `LOGISTICA`, `ADMINISTRATIVOS` | No |
+| Sin zona asignada | Según `almuerzo_controlar_sin_zona` (hoy `true`) |
+
+El worker descarta a alguien por tres motivos, en este orden:
+
+1. `almuerzo_control_activo` está en `false` (apaga todo).
+2. Su `zk_id` está en `almuerzo_excluir_ids` — override individual, manda sobre la zona.
+3. Su zona no está en `almuerzo_zonas_controladas`.
+
+Si `almuerzo_zonas_controladas` queda **vacía**, se mide a todos: así una configuración borrada por error no apaga el módulo en silencio.
+
+En la sección Zonas se puede filtrar por zona (o por *sin asignar*), seleccionar varias personas con las casillas y asignarles zona de una sola vez. Cambiar **qué zonas se controlan** requiere cuenta superadmin y confirmar con *Guardar cambios*: afecta la medición de toda la planta.
+
+Para agregar una zona nueva al catálogo, sin tocar código:
+
+```bash
+mysql -u admin -p control_comedor -e \
+  "UPDATE configuracion SET valor = CONCAT(valor, ',PATIO') WHERE clave = 'almuerzo_zonas_disponibles';"
+```
+
+Si alguien queda con una zona que no está en el catálogo, la sección Zonas lo avisa como *zona huérfana* (no aparecería en el selector).
+
 ### Cómo se decide qué es un retorno
 
 | Situación | Resultado |
@@ -891,6 +920,23 @@ SELECT origen, estado, COUNT(*) FROM almuerzo_sesiones GROUP BY origen, estado;"
 ```
 
 Es idempotente por el `UNIQUE (user_id, fecha)` más `ON DUPLICATE KEY` no-op: re-ejecutarla no duplica ni sobrescribe lo medido en vivo. Ver la advertencia sobre la calidad de estos datos en §8.1.
+
+### Migración 006: Zonas de trabajo — **aplicada 13/08/2026**
+
+Agrega `usuarios.zona` y las 3 claves `almuerzo_zona*`. Siembra zona `ADMINISTRATIVOS` a los 22 empleados con `role = 'Administrativo'`; los 154 operativos quedan sin zona y se clasifican desde AdminV2 → Zonas.
+
+```bash
+mysql -u admin -p control_comedor < \
+    /home/john/comedor/Tickets_Comedor/sql/migrations/006_zonas_almuerzo.sql
+
+# Verificar el avance de la clasificación
+mysql -u admin -p control_comedor -e "
+SELECT COALESCE(zona,'(sin zona)') zona, COUNT(*) FROM usuarios GROUP BY zona ORDER BY 2 DESC;"
+```
+
+Re-ejecutable: el `ADD COLUMN` y el `ADD KEY` son condicionales y el sembrado solo toca a quien no tiene zona.
+
+> **Requiere reiniciar el worker** para que aplique el filtro por zona.
 
 ### Aplicar una nueva migración
 

@@ -60,6 +60,7 @@ function serializar(fila) {
         observacion: fila.observacion,
         // BIOMETRICO = medido en vivo; BACKFILL = inferido del histórico (migración 005)
         origen: fila.origen || 'BIOMETRICO',
+        zona: fila.zona || null,
     };
 }
 
@@ -122,6 +123,7 @@ router.get('/excel', checkAuth('admin'), async (req, res) => {
             { header: 'Fecha',        key: 'fecha',    width: 12 },
             { header: 'ID',           key: 'id',       width: 8 },
             { header: 'Colaborador',  key: 'nombre',   width: 38 },
+            { header: 'Zona',         key: 'zona',     width: 16 },
             { header: 'Ticket',       key: 'ticket',   width: 9 },
             { header: 'Salida',       key: 'salida',   width: 10 },
             { header: 'Retorno',      key: 'retorno',  width: 10 },
@@ -140,6 +142,7 @@ router.get('/excel', checkAuth('admin'), async (req, res) => {
                 fecha: f.fecha,
                 id: f.userId,
                 nombre: f.nombre,
+                zona: f.zona ?? '(sin zona)',
                 ticket: f.numeroTicket ?? '—',
                 salida: f.horaSalida ?? '—',
                 retorno: f.horaRetorno ?? '—',
@@ -190,6 +193,71 @@ router.get('/excel', checkAuth('admin'), async (req, res) => {
         } else {
             res.end();
         }
+    }
+});
+
+// ── GET /api/almuerzos/zonas ───────────────────────────────────────────────
+// Catálogo de zonas, cuáles se controlan y cuántos empleados hay en cada una.
+router.get('/zonas', checkAuth('admin'), async (req, res) => {
+    try {
+        res.json(await almuerzoRepo.configZonas());
+    } catch (error) {
+        logError('almuerzos/zonas', error, req);
+        res.status(500).json({ error: 'Error interno del servidor. Contacta al administrador.' });
+    }
+});
+
+// ── PUT /api/almuerzos/zonas ───────────────────────────────────────────────
+// Define a qué zonas se les controla el tiempo. Solo superadmin: cambia a quién
+// se le mide el almuerzo en toda la planta.
+router.put('/zonas', checkAuth('superadmin'), async (req, res) => {
+    try {
+        const { controladas, controlarSinZona } = req.body || {};
+        const resultado = await almuerzoRepo.guardarConfigZonas({ controladas, controlarSinZona });
+        if (!resultado.ok) {
+            return res.status(400).json({ error: resultado.motivo });
+        }
+        res.json({ success: true, controladas: resultado.controladas });
+    } catch (error) {
+        logError('almuerzos/zonas/guardar', error, req);
+        res.status(500).json({ error: 'Error interno del servidor. Contacta al administrador.' });
+    }
+});
+
+// ── GET /api/almuerzos/empleados ───────────────────────────────────────────
+// Listado de empleados con su zona, para la pantalla de clasificación.
+// Los no clasificados salen primero: son los que hay que atender.
+router.get('/empleados', checkAuth('admin'), async (req, res) => {
+    try {
+        const filas = await almuerzoRepo.listarEmpleados(req.query);
+        res.json({
+            data: filas.map(f => ({
+                zkId: f.zk_id,
+                nombre: f.nombre_completo,
+                role: f.role,
+                zona: f.zona || null,
+            })),
+            total: filas.length,
+        });
+    } catch (error) {
+        logError('almuerzos/empleados', error, req);
+        res.status(500).json({ error: 'Error interno del servidor. Contacta al administrador.' });
+    }
+});
+
+// ── PUT /api/almuerzos/empleados/zona ──────────────────────────────────────
+// Asigna una zona a uno o varios empleados. `zona: null` la quita.
+router.put('/empleados/zona', checkAuth('admin'), async (req, res) => {
+    try {
+        const { zkIds, zona } = req.body || {};
+        const resultado = await almuerzoRepo.asignarZona(zkIds, zona);
+        if (!resultado.ok) {
+            return res.status(400).json({ error: resultado.motivo });
+        }
+        res.json({ success: true, actualizados: resultado.actualizados, zona: resultado.zona });
+    } catch (error) {
+        logError('almuerzos/empleados/zona', error, req);
+        res.status(500).json({ error: 'Error interno del servidor. Contacta al administrador.' });
     }
 });
 

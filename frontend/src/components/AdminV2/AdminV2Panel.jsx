@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    LayoutDashboard, Ticket, Timer, Users, Shield, Settings, FileText,
+    LayoutDashboard, Ticket, Timer, Factory, Users, Shield, Settings, FileText,
     LogOut, Menu, X, ChevronRight
 } from 'lucide-react';
 
@@ -10,6 +10,7 @@ import AdminLogin from './AdminLogin';
 import ResumenSection from './sections/ResumenSection';
 import RegistrosSection from './sections/RegistrosSection';
 import AlmuerzosSection from './sections/AlmuerzosSection';
+import ZonasSection from './sections/ZonasSection';
 import EmpleadosSection from './sections/EmpleadosSection';
 import OperadoresSection from './sections/OperadoresSection';
 import ConfiguracionSection from './sections/ConfiguracionSection';
@@ -19,6 +20,7 @@ const SECTIONS = [
     { id: 'resumen', label: 'Resumen', icon: LayoutDashboard, color: '#38bdf8' },
     { id: 'registros', label: 'Registros', icon: Ticket, color: '#7dd3fc' },
     { id: 'almuerzos', label: 'Almuerzos', icon: Timer, color: '#f472b6' },
+    { id: 'zonas', label: 'Zonas', icon: Factory, color: '#fb7185' },
     { id: 'empleados', label: 'Empleados', icon: Users, color: '#10b981' },
     { id: 'operadores', label: 'Operadores', icon: Shield, color: '#a78bfa' },
     { id: 'configuracion', label: 'Configuración', icon: Settings, color: '#f59e0b' },
@@ -29,6 +31,7 @@ const SECTION_LABELS = {
     resumen: 'Resumen del Sistema',
     registros: 'Historial de Registros',
     almuerzos: 'Control de Tiempo de Almuerzo',
+    zonas: 'Zonas de Trabajo y Control de Tiempo',
     empleados: 'Gestión de Empleados',
     operadores: 'Operadores del Sistema',
     configuracion: 'Configuración',
@@ -267,6 +270,7 @@ export default function AdminV2Panel() {
                     {active === 'resumen' && <ResumenSection {...sectionProps} />}
                     {active === 'registros' && <RegistrosSection {...sectionProps} />}
                     {active === 'almuerzos' && <AlmuerzosSection {...sectionProps} />}
+                    {active === 'zonas' && <ZonasSection {...sectionProps} />}
                     {active === 'empleados' && <EmpleadosSection {...sectionProps} />}
                     {active === 'operadores' && <OperadoresSection {...sectionProps} />}
                     {active === 'configuracion' && <ConfiguracionSection {...sectionProps} />}

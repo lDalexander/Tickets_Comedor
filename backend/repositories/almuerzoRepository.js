@@ -26,6 +26,9 @@ const CONFIG_DEFAULTS = {
     almuerzo_excluir_ids: '',
     almuerzo_email_activo: 'true',
     almuerzo_email_destinos: '',
+    almuerzo_zonas_disponibles: 'BODEGA,LOGISTICA,SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO,ADMINISTRATIVOS',
+    almuerzo_zonas_controladas: 'SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO',
+    almuerzo_controlar_sin_zona: 'true',
 };
 
 const ESTADOS_VALIDOS = [
@@ -60,6 +63,15 @@ const isValidDate = (valor) => {
 };
 
 const isValidTime = (valor) => typeof valor === 'string' && /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(valor);
+
+/** 'A, b ,C' -> ['A','B','C'] sin vacíos ni repetidos. */
+const parsearLista = (valor) => [...new Set(
+    String(valor || '').split(',').map(p => p.trim().toUpperCase()).filter(Boolean)
+)];
+
+// Una zona es un nombre corto en mayúsculas: se valida para que no entre basura
+// por la API ni se rompa el formato separado por comas de `configuracion`.
+const ZONA_VALIDA = /^[A-ZÑ][A-ZÑ0-9 _-]{1,19}$/;
 
 let _cacheConfig = null;
 let _cacheConfigTs = 0;
@@ -110,7 +122,7 @@ function normalizarRango({ desde, hasta, fecha }) {
 }
 
 /** Cláusulas WHERE comunes. El primer `?` del SELECT es siempre el límite. */
-function construirFiltro({ desde, hasta, estado, q }, limite) {
+function construirFiltro({ desde, hasta, estado, q, zona }, limite) {
     const condiciones = ['s.fecha BETWEEN ? AND ?'];
     const params = [limite, desde, hasta];
 
@@ -118,6 +130,16 @@ function construirFiltro({ desde, hasta, estado, q }, limite) {
         condiciones.push('(s.nombre LIKE ? OR s.user_id LIKE ?)');
         const like = `%${String(q).slice(0, 80)}%`;
         params.push(like, like);
+    }
+
+    if (zona) {
+        const z = String(zona).trim().toUpperCase();
+        if (z === 'SIN_ZONA') {
+            condiciones.push("(u.zona IS NULL OR u.zona = '')");
+        } else if (ZONA_VALIDA.test(z)) {
+            condiciones.push('UPPER(u.zona) = ?');
+            params.push(z);
+        }
     }
 
     // El estado efectivo es una expresión derivada, no una columna: se filtra
@@ -144,10 +166,11 @@ class AlmuerzoRepository {
         const seleccion = `
             SELECT s.id, s.user_id, s.nombre, s.fecha,
                    s.hora_salida, s.hora_retorno, s.tipo_ticket, s.numero_ticket,
-                   s.cierre_manual, s.observacion, s.origen,
+                   s.cierre_manual, s.observacion, s.origen, u.zona,
                    ${SQL_SEGUNDOS} AS segundos,
                    ${SQL_ESTADO_EFECTIVO} AS estado_efectivo
             FROM almuerzo_sesiones s
+            LEFT JOIN usuarios u ON u.zk_id = s.user_id
             ${where}`;
 
         // Se cuenta sobre la misma subconsulta para que el total respete el HAVING.
@@ -177,10 +200,11 @@ class AlmuerzoRepository {
         return db.query(
             `SELECT s.id, s.user_id, s.nombre, s.fecha,
                     s.hora_salida, s.hora_retorno, s.tipo_ticket, s.numero_ticket,
-                    s.cierre_manual, s.observacion, s.origen,
+                    s.cierre_manual, s.observacion, s.origen, u.zona,
                     ${SQL_SEGUNDOS} AS segundos,
                     ${SQL_ESTADO_EFECTIVO} AS estado_efectivo
              FROM almuerzo_sesiones s
+             LEFT JOIN usuarios u ON u.zk_id = s.user_id
              ${where}
              ${having}
              ORDER BY s.fecha ASC, s.hora_salida ASC`,
@@ -193,6 +217,8 @@ class AlmuerzoRepository {
         const { desde, hasta } = normalizarRango(query);
         const limite = await limiteSegundos();
         const config = await obtenerConfig();
+
+        const { where, params } = construirFiltro({ ...query, desde, hasta }, limite);
 
         const rows = await db.query(
             `SELECT
@@ -210,9 +236,10 @@ class AlmuerzoRepository {
                        ${SQL_SEGUNDOS} AS segundos,
                        ${SQL_ESTADO_EFECTIVO} AS estado_efectivo
                 FROM almuerzo_sesiones s
-                WHERE s.fecha BETWEEN ? AND ?
+                LEFT JOIN usuarios u ON u.zk_id = s.user_id
+                ${where}
              ) t`,
-            [limite, desde, hasta]
+            params
         );
 
         const r = rows[0] || {};
@@ -286,6 +313,157 @@ class AlmuerzoRepository {
         return { ok: true, estado, segundos };
     }
 
+    // ── Zonas de trabajo (migración 006) ──────────────────────────────────
+
+    /**
+     * Catálogo de zonas, cuáles se controlan y cuántos empleados hay en cada una.
+     * `SIN_ZONA` es una pseudo-zona: agrupa a quien todavía no está clasificado.
+     */
+    async configZonas() {
+        const config = await obtenerConfig(true);
+        const disponibles = parsearLista(config.almuerzo_zonas_disponibles);
+        const controladas = parsearLista(config.almuerzo_zonas_controladas);
+        const controlarSinZona = String(config.almuerzo_controlar_sin_zona).toLowerCase() === 'true';
+
+        const filas = await db.query(
+            `SELECT COALESCE(NULLIF(UPPER(TRIM(zona)), ''), 'SIN_ZONA') AS zona,
+                    COUNT(*) AS empleados
+               FROM usuarios
+              GROUP BY zona
+              ORDER BY empleados DESC`
+        );
+        const conteos = {};
+        filas.forEach(f => { conteos[f.zona] = Number(f.empleados); });
+
+        return {
+            zonas: disponibles.map(zona => ({
+                zona,
+                controlada: controladas.includes(zona),
+                empleados: conteos[zona] || 0,
+            })),
+            sinZona: conteos.SIN_ZONA || 0,
+            controlarSinZona,
+            // Zonas presentes en `usuarios` pero fuera del catálogo: quedarían
+            // invisibles en el selector, así que se reportan explícitamente.
+            huerfanas: Object.keys(conteos)
+                .filter(z => z !== 'SIN_ZONA' && !disponibles.includes(z))
+                .map(zona => ({ zona, empleados: conteos[zona] })),
+        };
+    }
+
+    /**
+     * Guarda qué zonas se controlan y qué hacer con los no clasificados.
+     * Solo acepta zonas del catálogo: así no se puede activar el control de una
+     * zona inexistente por un error de tipeo.
+     */
+    async guardarConfigZonas({ controladas, controlarSinZona }) {
+        const config = await obtenerConfig(true);
+        const disponibles = parsearLista(config.almuerzo_zonas_disponibles);
+
+        if (!Array.isArray(controladas)) {
+            return { ok: false, motivo: 'Se esperaba una lista de zonas' };
+        }
+        const limpias = parsearLista(controladas.join(','));
+        const desconocidas = limpias.filter(z => !disponibles.includes(z));
+        if (desconocidas.length > 0) {
+            return { ok: false, motivo: `Zonas no reconocidas: ${desconocidas.join(', ')}` };
+        }
+
+        const conexion = await db.pool.promise().getConnection();
+        try {
+            await conexion.beginTransaction();
+            await conexion.query(
+                `INSERT INTO configuracion (clave, valor) VALUES ('almuerzo_zonas_controladas', ?)
+                 ON DUPLICATE KEY UPDATE valor = VALUES(valor)`,
+                [limpias.join(',')]
+            );
+            if (controlarSinZona !== undefined) {
+                await conexion.query(
+                    `INSERT INTO configuracion (clave, valor) VALUES ('almuerzo_controlar_sin_zona', ?)
+                     ON DUPLICATE KEY UPDATE valor = VALUES(valor)`,
+                    [controlarSinZona ? 'true' : 'false']
+                );
+            }
+            await conexion.commit();
+        } catch (error) {
+            await conexion.rollback();
+            throw error;
+        } finally {
+            conexion.release();
+        }
+
+        this.invalidarConfig();
+        return { ok: true, controladas: limpias };
+    }
+
+    /** Empleados con su zona, para la pantalla de clasificación. */
+    async listarEmpleados({ zona, q, role } = {}) {
+        const condiciones = [];
+        const params = [];
+
+        if (zona) {
+            const z = String(zona).trim().toUpperCase();
+            if (z === 'SIN_ZONA') {
+                condiciones.push("(zona IS NULL OR zona = '')");
+            } else if (ZONA_VALIDA.test(z)) {
+                condiciones.push('UPPER(zona) = ?');
+                params.push(z);
+            }
+        }
+        if (q) {
+            condiciones.push('(nombre_completo LIKE ? OR zk_id LIKE ?)');
+            const like = `%${String(q).slice(0, 80)}%`;
+            params.push(like, like);
+        }
+        if (role) {
+            condiciones.push('role = ?');
+            params.push(String(role).slice(0, 50));
+        }
+        const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+
+        return db.query(
+            `SELECT zk_id, nombre_completo, role, zona
+               FROM usuarios
+               ${where}
+              ORDER BY (zona IS NULL) DESC, nombre_completo ASC`,
+            params
+        );
+    }
+
+    /**
+     * Asigna una zona a uno o varios empleados. `zona` en null o '' la quita.
+     * Devuelve cuántos registros cambiaron.
+     */
+    async asignarZona(zkIds, zona) {
+        const ids = (Array.isArray(zkIds) ? zkIds : [zkIds])
+            .map(id => String(id).trim())
+            .filter(Boolean)
+            .slice(0, 500);
+
+        if (ids.length === 0) {
+            return { ok: false, motivo: 'Sin empleados seleccionados' };
+        }
+
+        let valor = null;
+        if (zona !== null && zona !== undefined && String(zona).trim() !== '') {
+            valor = String(zona).trim().toUpperCase();
+            if (!ZONA_VALIDA.test(valor)) {
+                return { ok: false, motivo: 'Nombre de zona inválido' };
+            }
+            const config = await obtenerConfig(true);
+            if (!parsearLista(config.almuerzo_zonas_disponibles).includes(valor)) {
+                return { ok: false, motivo: `La zona ${valor} no está en el catálogo` };
+            }
+        }
+
+        const marcadores = ids.map(() => '?').join(',');
+        const resultado = await db.query(
+            `UPDATE usuarios SET zona = ? WHERE zk_id IN (${marcadores})`,
+            [valor, ...ids]
+        );
+        return { ok: true, actualizados: resultado.affectedRows, zona: valor };
+    }
+
     /** Invalida la caché de configuración (tras guardar desde el panel). */
     invalidarConfig() {
         _cacheConfig = null;
@@ -300,8 +478,13 @@ module.exports = {
     listarRango: (q) => repositorio.listarRango(q),
     resumen: (q) => repositorio.resumen(q),
     cerrarManual: (id, datos) => repositorio.cerrarManual(id, datos),
+    configZonas: () => repositorio.configZonas(),
+    guardarConfigZonas: (datos) => repositorio.guardarConfigZonas(datos),
+    listarEmpleados: (q) => repositorio.listarEmpleados(q),
+    asignarZona: (ids, zona) => repositorio.asignarZona(ids, zona),
     invalidarConfig: () => repositorio.invalidarConfig(),
     obtenerConfig,
     normalizarRango,
+    parsearLista,
     ESTADOS_VALIDOS,
 };

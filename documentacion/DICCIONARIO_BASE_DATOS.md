@@ -108,13 +108,32 @@ Catálogo de empleados sincronizado desde el lector biométrico ZKTeco. Es la fu
 | `zk_id` | `varchar(50)` | NO | — | **PK.** ID del usuario en el dispositivo ZKTeco. Es texto porque el ZKTeco lo entrega como string |
 | `nombre_completo` | `varchar(150)` | NO | — | Nombre completo del empleado tal como está enrolado en el biométrico |
 | `role` | `varchar(50)` | SÍ | `'Operativo'` | Rol del empleado. Dominio observado: `Operativo`, `Administrativo`, `Visitante`. Con rol `Administrativo` la pantalla de selección permite elegir menú por día |
+| `zona` | `varchar(20)` | SÍ | NULL | Área de trabajo (migración 006). `NULL` = sin clasificar. Decide a quién se le controla el tiempo de almuerzo. Ver dominio abajo |
 | `tipo_menu_predeterminado` | `varchar(50)` | SÍ | `'Normal'` | Tipo de menú que se imprime por defecto. Dominio: `Normal`, `Dieta` |
+
+**Dominio de `zona`**
+
+El catálogo no está en el esquema: vive en `configuracion.almuerzo_zonas_disponibles`, para poder agregar o quitar zonas sin migrar. Por eso la columna es `VARCHAR` y no `ENUM`.
+
+| Zona | ¿Se le controla el tiempo de almuerzo? |
+|------|----------------------------------------|
+| `SOLIDO` | Sí |
+| `LIQUIDO` | Sí |
+| `SOPLADO` | Sí |
+| `MANTENIMIENTO` | Sí |
+| `BODEGA` | No |
+| `LOGISTICA` | No |
+| `ADMINISTRATIVOS` | No |
+| `NULL` (sin clasificar) | Según `almuerzo_controlar_sin_zona` (hoy `true`) |
+
+> `zona` y `role` son **independientes**. `role` controla la pantalla de selección de menú; `zona` controla la medición del almuerzo. Un `Administrativo` de `role` fue sembrado con zona `ADMINISTRATIVOS` por la migración 006, pero después pueden divergir sin problema.
 
 **Índices**
 
-| Nombre | Tipo | Columnas |
-|--------|------|----------|
-| `PRIMARY` | PK | `zk_id` |
+| Nombre | Tipo | Columnas | Uso |
+|--------|------|----------|-----|
+| `PRIMARY` | PK | `zk_id` | — |
+| `idx_usuarios_zona` | INDEX | `zona` | Filtros por zona del panel y del reporte |
 
 > ⚠️ **Migración 002 pendiente en producción (verificado julio 2026).** El archivo
 > `sql/migrations/002_add_tipo_especial.sql` agrega la columna `tipo_especial`
@@ -233,6 +252,9 @@ Almacén clave-valor de parámetros del sistema, editable desde el panel AdminV2
 | `almuerzo_excluir_ids` | `14,27` | `zk_id` sin control de tiempo (VIPs con derecho a ticket extra). No se les abre sesión, para que no aparezcan como `SIN_RETORNO` |
 | `almuerzo_email_activo` | `true` | Habilita el reporte diario por correo |
 | `almuerzo_email_destinos` | `agarcia@detcuador.com` | Destinatarios del reporte, separados por coma |
+| `almuerzo_zonas_disponibles` | `BODEGA,LOGISTICA,SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO,ADMINISTRATIVOS` | Catálogo de zonas que ofrece el selector del panel (migración 006) |
+| `almuerzo_zonas_controladas` | `SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO` | Subconjunto de zonas a las que SÍ se mide el tiempo. Editable en AdminV2 → Zonas (solo superadmin) |
+| `almuerzo_controlar_sin_zona` | `true` | Qué hacer con quien no tiene zona. `true` = se le controla, para no apagar la medición mientras se clasifica al personal |
 
 > Para agregar un parámetro nuevo basta un `INSERT` — no requiere migración. Documentar aquí cualquier clave nueva.
 >

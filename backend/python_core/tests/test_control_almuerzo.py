@@ -32,6 +32,7 @@ CREATE TABLE usuarios (
   zk_id VARCHAR(50) NOT NULL PRIMARY KEY,
   nombre_completo VARCHAR(150) NOT NULL,
   role VARCHAR(50) DEFAULT 'Operativo',
+  zona VARCHAR(20) DEFAULT NULL,
   tipo_menu_predeterminado VARCHAR(50) DEFAULT 'Normal'
 ) ENGINE=InnoDB;
 
@@ -63,15 +64,21 @@ CREATE TABLE configuracion (
 """
 
 DATOS_BASE = """
-INSERT INTO usuarios (zk_id, nombre_completo) VALUES
-  ('900', 'PRUEBA UNO'), ('901', 'PRUEBA DOS'), ('902', 'PRUEBA TRES'),
-  ('904', 'PRUEBA CUATRO'), ('905', 'PRUEBA CINCO'), ('14', 'VIP CATORCE');
+INSERT INTO usuarios (zk_id, nombre_completo, zona) VALUES
+  ('900', 'PRUEBA UNO', NULL), ('901', 'PRUEBA DOS', NULL), ('902', 'PRUEBA TRES', NULL),
+  ('904', 'PRUEBA CUATRO', NULL), ('905', 'PRUEBA CINCO', NULL), ('14', 'VIP CATORCE', NULL),
+  ('910', 'OPERARIO SOLIDO', 'SOLIDO'),
+  ('911', 'JEFE ADMINISTRATIVO', 'ADMINISTRATIVOS'),
+  ('912', 'OPERARIO BODEGA', 'BODEGA'),
+  ('913', 'OPERARIO MANTENIMIENTO', 'mantenimiento');
 
 INSERT INTO configuracion (clave, valor) VALUES
   ('horario_activo', 'true'), ('horario_inicio', '00:00'), ('horario_fin', '23:59'),
   ('almuerzo_control_activo', 'true'), ('almuerzo_minutos_permitidos', '30'),
   ('almuerzo_tolerancia_minutos', '0'), ('almuerzo_retorno_min_minutos', '8'),
-  ('almuerzo_horario_fin_retorno', '15:30'), ('almuerzo_excluir_ids', '14,27');
+  ('almuerzo_horario_fin_retorno', '15:30'), ('almuerzo_excluir_ids', '14,27'),
+  ('almuerzo_zonas_controladas', 'SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO'),
+  ('almuerzo_controlar_sin_zona', 'true');
 """
 
 CONEXION_ADMIN = {
@@ -253,6 +260,54 @@ def main():
     check("904 abierta", db.tiene_sesion_abierta('904'), True)
     check("900 cerrada", db.tiene_sesion_abierta('900'), False)
     check("inexistente", db.tiene_sesion_abierta('999'), False)
+
+    print("\n--- CASO 12: control por zona de trabajo (migración 006) ---")
+    # Zona controlada -> abre sesión
+    db.registrar_evento('910', 'OPERARIO SOLIDO')
+    check("SOLIDO se mide", sesion('910') is not None, True)
+    # ADMINISTRATIVOS y BODEGA no se contabilizan
+    db.registrar_evento('911', 'JEFE ADMINISTRATIVO')
+    check("ADMINISTRATIVOS no se mide", sesion('911'), None)
+    db.registrar_evento('912', 'OPERARIO BODEGA')
+    check("BODEGA no se mide", sesion('912'), None)
+    # La comparación de zonas no distingue mayúsculas
+    db.registrar_evento('913', 'OPERARIO MANTENIMIENTO')
+    check("'mantenimiento' en minúsculas se mide", sesion('913') is not None, True)
+
+    print("\n--- CASO 13: un administrativo no genera retorno ni duplicado medido ---")
+    retroceder_salida('911', minutos=40)   # no tiene sesión: no hace nada
+    tipo, _, _ = db.registrar_evento('911', 'JEFE ADMINISTRATIVO')
+    check("2ª marcación de administrativo", tipo, "INTENTO DE DUPLICADO")
+    check("sigue sin sesión", sesion('911'), None)
+
+    print("\n--- CASO 14: almuerzo_controlar_sin_zona ---")
+    sql("DELETE FROM registros WHERE user_id = '905'")
+    sql("DELETE FROM almuerzo_sesiones WHERE user_id = '905'")
+    set_config('almuerzo_controlar_sin_zona', 'false')
+    db.registrar_evento('905', 'PRUEBA CINCO')   # 905 no tiene zona
+    check("sin zona y en false -> no se mide", sesion('905'), None)
+
+    sql("DELETE FROM registros WHERE user_id = '905'")
+    set_config('almuerzo_controlar_sin_zona', 'true')
+    db.registrar_evento('905', 'PRUEBA CINCO')
+    check("sin zona y en true -> se mide", sesion('905') is not None, True)
+
+    print("\n--- CASO 15: zonas controladas vacías = se mide a todos ---")
+    # Una configuración vacía no debe apagar el módulo en silencio
+    sql("DELETE FROM registros WHERE user_id = '912'")
+    sql("DELETE FROM almuerzo_sesiones WHERE user_id = '912'")
+    set_config('almuerzo_zonas_controladas', '')
+    db.registrar_evento('912', 'OPERARIO BODEGA')
+    check("BODEGA se mide si no hay zonas configuradas", sesion('912') is not None, True)
+    set_config('almuerzo_zonas_controladas', 'SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO')
+
+    print("\n--- CASO 16: la exclusión por ID manda sobre la zona ---")
+    sql("UPDATE usuarios SET zona = 'SOLIDO' WHERE zk_id = '14'")
+    sql("DELETE FROM registros WHERE user_id = '14'")
+    sql("DELETE FROM almuerzo_sesiones WHERE user_id = '14'")
+    db._config_cache = {}
+    db.registrar_evento('14', 'VIP CATORCE')
+    check("VIP en zona controlada sigue excluido", sesion('14'), None)
 
     print("\n" + "=" * 55)
     if fallos:
