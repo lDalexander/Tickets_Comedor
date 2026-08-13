@@ -194,7 +194,32 @@ class ReporteSemanal:
 
     @property
     def total_sin_marcar(self):
+        """Marcaciones de retorno que faltaron en toda la semana."""
         return sum(int(p['dias_sin_marcar'] or 0) for p in self.personas)
+
+    @property
+    def total_salidas(self):
+        return sum(int(p['dias_con_salida'] or 0) for p in self.personas)
+
+    @property
+    def total_marcadas(self):
+        """Retornos efectivamente marcados en la semana."""
+        return sum(int(p['dias_con_retorno'] or 0) for p in self.personas)
+
+    @property
+    def pct_marcacion(self):
+        """Porcentaje de cumplimiento de la marcación de retorno."""
+        if self.total_salidas == 0:
+            return None
+        return round(self.total_marcadas * 100 / self.total_salidas)
+
+    @property
+    def por_marcaciones(self):
+        """Todas las personas ordenadas por marcaciones faltantes, de más a menos."""
+        return sorted(
+            self.personas,
+            key=lambda p: (-int(p['dias_sin_marcar'] or 0), (p['nombre'] or ''))
+        )
 
     @property
     def hay_inferidos(self):
@@ -229,10 +254,15 @@ class ReporteSemanal:
 
     def asunto(self):
         n = len(self.con_exceso)
-        if n == 0:
-            return f"✅ Resumen semanal de almuerzos ({self.rango_texto()}) — sin excesos"
-        return (f"📊 Resumen semanal de almuerzos ({self.rango_texto()}) — "
-                f"{n} persona(s), {horas_min(self.exceso_total_semana)} de más")
+        partes = []
+        if n:
+            partes.append(f"{n} persona(s), {horas_min(self.exceso_total_semana)} de más")
+        if self.total_sin_marcar:
+            partes.append(f"{self.total_sin_marcar} marcación(es) faltante(s)")
+        if not partes:
+            return f"✅ Resumen semanal de almuerzos ({self.rango_texto()}) — todo en orden"
+        icono = '📊' if n else '⚠️'
+        return f"{icono} Resumen semanal de almuerzos ({self.rango_texto()}) — {' · '.join(partes)}"
 
     def resumen_consola(self):
         return (f"Personas: {len(self.personas)} | con exceso: {len(self.con_exceso)} | "
@@ -261,15 +291,19 @@ class ReporteSemanal:
     def texto_plano(self):
         limite_txt = (f"{self.permitidos} min"
                       + (f" (+{self.tolerancia} tolerancia)" if self.tolerancia else " estrictos"))
+        pct = self.pct_marcacion
         lineas = [
             f"RESUMEN SEMANAL DE ALMUERZOS — {self.rango_texto()} ({self.dias} días)",
             f"Tiempo permitido por día: {limite_txt}",
             "",
             f"Personas con salidas registradas: {len(self.personas)}",
+            f"Salidas a almuerzo:               {self.total_salidas}",
+            f"Retornos marcados:                {self.total_marcadas}"
+            + (f"  ({pct}% de las salidas)" if pct is not None else ""),
+            f"MARCACIONES FALTANTES:            {self.total_sin_marcar}",
             f"Personas que excedieron algún día: {len(self.con_exceso)}",
             f"Días excedidos en total:           {self.dias_excedidos_semana}",
             f"Tiempo de más acumulado:          {horas_min(self.exceso_total_semana)}",
-            f"Días sin marcar el retorno:       {self.total_sin_marcar}",
             "",
         ]
         if self.con_exceso:
@@ -277,15 +311,29 @@ class ReporteSemanal:
             for p in self.con_exceso:
                 lineas.append(
                     f"  {(p['nombre'] or '')[:32]:<32} {mmss(p['exceso_total']):>8} de más"
-                    f"  ({p['dias_excedidos']} de {p['dias_con_salida']} días)"
+                    f"  ({p['dias_excedidos']} de {p['dias_con_salida']} días excedidos,"
+                    f" marcó {p['dias_con_retorno']}/{p['dias_con_salida']})"
                 )
         else:
             lineas.append("Ninguna persona excedió el tiempo esta semana.")
 
-        if self.sin_marcar:
-            lineas += ["", "DÍAS SIN MARCAR EL RETORNO"]
-            for p in self.sin_marcar:
-                lineas.append(f"  {(p['nombre'] or '')[:32]:<32} {p['dias_sin_marcar']} día(s)")
+        if self.personas:
+            lineas += ["", "MARCACIONES DE RETORNO POR PERSONA (salidas / marcadas / faltantes)"]
+            for p in self.por_marcaciones:
+                faltan = int(p['dias_sin_marcar'] or 0)
+                marca = '  <-- faltan marcaciones' if faltan else ''
+                lineas.append(
+                    f"  {(p['nombre'] or '')[:32]:<32} "
+                    f"{p['dias_con_salida']:>2} / {p['dias_con_retorno']:>2} / {faltan:>2}{marca}"
+                )
+
+        if self.total_sin_marcar:
+            lineas += [
+                "",
+                f"AVISO: faltaron {self.total_sin_marcar} marcaciones de retorno de "
+                f"{self.total_salidas} salidas registradas. Sin la segunda marcación no "
+                f"hay tiempo que medir en esos días.",
+            ]
 
         if self.por_dia:
             lineas += ["", "EVOLUCIÓN DE LA SEMANA"]
@@ -342,8 +390,45 @@ class ReporteSemanal:
                         'font-size:13px;min-width:110px;')
                 + celda(f"{p['dias_excedidos']} de {p['dias_con_salida']}",
                         'font-size:12px;color:#6b7280;white-space:nowrap;text-align:center;')
+                + celda(
+                    f"{p['dias_con_retorno']}/{p['dias_con_salida']}" + (
+                        f' <span style="color:#dc2626;font-weight:700;">'
+                        f'(faltan {p["dias_sin_marcar"]})</span>'
+                        if int(p['dias_sin_marcar'] or 0) else ''
+                    ),
+                    'font-size:12px;color:#6b7280;white-space:nowrap;text-align:center;')
                 + celda(mmss(p['peor_dia']), 'font-size:12px;color:#6b7280;white-space:nowrap;')
                 + celda(mmss(p['promedio']), 'font-size:12px;color:#6b7280;white-space:nowrap;')
+                + '</tr>'
+            )
+
+        # ── Marcaciones de retorno por persona (todas) ──
+        filas_marcaciones = ''
+        for p in self.por_marcaciones:
+            salidas = int(p['dias_con_salida'] or 0)
+            marcadas = int(p['dias_con_retorno'] or 0)
+            faltan = int(p['dias_sin_marcar'] or 0)
+            # Barra de cumplimiento: proporción de retornos marcados sobre salidas
+            pct = round(marcadas * 100 / salidas) if salidas else 0
+            color_barra = '#059669' if faltan == 0 else ('#d97706' if pct >= 50 else '#dc2626')
+            filas_marcaciones += (
+                f'<tr style="background:{"#ffffff" if faltan == 0 else "#fff7ed"};">'
+                + celda(p['nombre'], 'font-size:13px;color:#111827;')
+                + celda(p['zona'] or '<span style="color:#dc2626;">sin zona</span>',
+                        'font-size:11px;color:#6b7280;white-space:nowrap;')
+                + celda(salidas, 'font-size:12px;color:#6b7280;text-align:center;')
+                + celda(f'<strong style="color:{color_barra};">{marcadas}</strong>',
+                        'font-size:12px;text-align:center;')
+                + celda(
+                    f'<strong style="color:#dc2626;">{faltan}</strong>' if faltan
+                    else '<span style="color:#059669;">0</span>',
+                    'font-size:12px;text-align:center;')
+                + celda(
+                    f'<div style="background:#e5e7eb;border-radius:3px;height:6px;width:100%;">'
+                    f'<div style="background:{color_barra};height:6px;border-radius:3px;width:{pct}%;"></div>'
+                    f'</div>'
+                    f'<div style="font-size:10px;color:#9ca3af;margin-top:2px;">{pct}%</div>',
+                    'min-width:90px;')
                 + '</tr>'
             )
 
@@ -390,6 +475,34 @@ class ReporteSemanal:
         limite_txt = (f"{self.permitidos} minutos"
                       + (f" + {self.tolerancia} de tolerancia" if self.tolerancia else " (límite estricto)"))
 
+        # Aviso destacado de marcaciones faltantes: sin la segunda marcación no se
+        # puede medir el tiempo de ese día, así que es el dato que más urge corregir.
+        pct = self.pct_marcacion
+        if self.total_sin_marcar:
+            aviso_marcaciones = (
+                f'<div style="margin:14px 0 4px;padding:12px 16px;background:#fef2f2;'
+                f'border-left:4px solid #dc2626;border-radius:6px;">'
+                f'<div style="font-size:13px;font-weight:700;color:#dc2626;">'
+                f'⚠️ Faltaron {self.total_sin_marcar} marcaciones de retorno esta semana</div>'
+                f'<div style="font-size:12px;color:#6b7280;margin-top:3px;">'
+                f'Se registraron {self.total_salidas} salidas a almuerzo y solo '
+                f'{self.total_marcadas} retornos ({pct}%). En los días sin segunda marcación '
+                f'no hay tiempo que medir, así que ese almuerzo no entra en el acumulado.</div>'
+                f'</div>'
+            )
+        elif self.total_salidas:
+            aviso_marcaciones = (
+                f'<div style="margin:14px 0 4px;padding:12px 16px;background:#ecfdf5;'
+                f'border-left:4px solid #059669;border-radius:6px;">'
+                f'<div style="font-size:13px;font-weight:700;color:#059669;">'
+                f'✅ Todas las salidas tienen su marcación de retorno</div>'
+                f'<div style="font-size:12px;color:#6b7280;margin-top:3px;">'
+                f'{self.total_marcadas} de {self.total_salidas} salidas con retorno marcado.</div>'
+                f'</div>'
+            )
+        else:
+            aviso_marcaciones = ''
+
         if self.hay_inferidos:
             nota_inferidos = (
                 '<p style="margin:16px 0 0;font-size:11px;color:#9ca3af;line-height:1.5;">'
@@ -407,7 +520,7 @@ class ReporteSemanal:
             ) if excluidas else ''
 
         sin_datos = (
-            '<tr><td colspan="7" style="padding:24px;text-align:center;color:#059669;font-size:13px;">'
+            '<tr><td colspan="8" style="padding:24px;text-align:center;color:#059669;font-size:13px;">'
             'Ninguna persona excedió el tiempo permitido esta semana.</td></tr>'
         )
 
@@ -434,10 +547,13 @@ class ReporteSemanal:
         {tarjeta(horas_min(self.exceso_total_semana), 'Tiempo de más', '#dc2626')}
         {tarjeta(len(self.con_exceso), 'Personas', '#ea580c')}
         {tarjeta(self.dias_excedidos_semana, 'Días excedidos', '#d97706')}
-        {tarjeta(self.total_sin_marcar, 'Días sin marcar', '#6b7280')}
-        {tarjeta(len(self.personas), 'Con salidas', '#0369a1')}
+        {tarjeta(f'{self.total_marcadas}/{self.total_salidas}', 'Retornos marcados', '#0369a1')}
+        {tarjeta(self.total_sin_marcar, 'Marcaciones faltantes',
+                 '#dc2626' if self.total_sin_marcar else '#059669')}
       </tr>
     </table>
+
+    {aviso_marcaciones}
     <p style="margin:10px 0 18px;font-size:12px;color:#6b7280;">
       Acumulado de <strong>{self.dias} días</strong> ({self.rango_texto()}).
       Tiempo concedido por día: <strong>{limite_txt}</strong>.
@@ -449,8 +565,20 @@ class ReporteSemanal:
       Tiempo de más acumulado por persona
     </h3>
     <table style="width:100%;border-collapse:collapse;">
-      {encabezados(['#', 'Colaborador', 'Zona', 'Tiempo de más', 'Días excedidos', 'Peor día', 'Promedio'])}
+      {encabezados(['#', 'Colaborador', 'Zona', 'Tiempo de más', 'Días excedidos', 'Marcó', 'Peor día', 'Promedio'])}
       {filas_exceso or sin_datos}
+    </table>
+
+    <h3 style="margin:24px 0 4px;font-size:14px;font-weight:700;color:#111827;">
+      Marcaciones de retorno por persona
+    </h3>
+    <p style="margin:0 0 8px;font-size:12px;color:#6b7280;">
+      Días que cada persona salió a almorzar y en cuántos marcó su regreso.
+      Los que tienen marcaciones faltantes aparecen primero.
+    </p>
+    <table style="width:100%;border-collapse:collapse;">
+      {encabezados(['Colaborador', 'Zona', 'Salidas', 'Marcó', 'Faltan', 'Cumplimiento'])}
+      {filas_marcaciones or '<tr><td colspan="6" style="padding:18px;text-align:center;color:#9ca3af;font-size:13px;">Sin salidas registradas en el rango</td></tr>'}
     </table>
 
     {bloque_sin_marcar}

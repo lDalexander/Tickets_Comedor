@@ -607,7 +607,14 @@ Ese interruptor apaga **ambos** reportes, el diario y el semanal.
 
 Lo envía `comedor-weekly-lunch-report.timer` los **viernes a las 15:00**, media hora después del reporte diario de ese día. Suma el tiempo de más de **7 días (sábado a viernes)** y agrupa por persona, no por sesión: quien se pasó 5 minutos cada día aparece con 35 minutos acumulados, aunque ningún día individual pareciera grave.
 
-Contiene un ranking de tiempo acumulado (con barra proporcional), los días sin marcar por persona y la evolución día por día de la semana.
+Contiene, en este orden:
+
+1. Aviso destacado de **marcaciones faltantes** (retornos que no se marcaron en la semana), en rojo si faltan y en verde si están todas.
+2. Ranking de tiempo acumulado con barra proporcional, incluyendo cuántos días marcó cada persona.
+3. **Marcaciones de retorno por persona**: salidas, marcadas, faltantes y el porcentaje de cumplimiento de cada uno. Los que tienen faltantes aparecen primero.
+4. Evolución día por día de la semana.
+
+El viernes llegan **los dos correos**: el diario del viernes a las 14:30 y el semanal a las 15:00.
 
 ```bash
 cd /home/john/comedor/Tickets_Comedor/backend/python_core
