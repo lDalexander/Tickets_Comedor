@@ -1,0 +1,15 @@
+[Unit]
+Description=Dispara el resumen semanal de almuerzos los viernes a las 15:00
+Requires=comedor-weekly-lunch-report.service
+
+[Timer]
+# Viernes 15:00, media hora después del reporte diario de ese día (14:30).
+# Cubre los 7 días que terminan en ese viernes (sábado a viernes): en la planta
+# se almuerza todos los días, así que ningún día queda fuera de un semanal.
+OnCalendar=Fri 15:00
+# Si el servidor estuvo apagado el viernes a esa hora, se ejecuta al arrancar
+Persistent=true
+Unit=comedor-weekly-lunch-report.service
+
+[Install]
+WantedBy=timers.target

@@ -191,11 +191,19 @@ class ReporteAlmuerzo:
         return any(f['origen'] == 'BACKFILL' for f in self.filas)
 
     # ── Salidas ───────────────────────────────────────────────────────────
+    @property
+    def nombre_base(self):
+        return f"control_almuerzo_{self.fecha.isoformat()}"
+
     def asunto(self):
         n = len(self.excedidos)
         icono = '⚠️' if n else '✅'
         detalle = f'{n} excedieron el tiempo' if n else 'sin excesos'
         return f"{icono} Control de Almuerzo {self.fecha.isoformat()} — {detalle}"
+
+    def resumen_consola(self):
+        return (f"Sesiones: {len(self.filas)} | excedidos: {len(self.excedidos)} | "
+                f"sin marcar: {len(self.sin_marcar)} | en almuerzo: {len(self.en_almuerzo)}")
 
     def csv_bytes(self):
         buffer = io.StringIO()
@@ -398,11 +406,17 @@ class ReporteAlmuerzo:
 </div></body></html>"""
 
 
-def enviar(reporte: ReporteAlmuerzo, destinos, dry_run=False):
+def enviar(reporte, destinos, dry_run=False):
+    """
+    Envía cualquier reporte que exponga: asunto(), texto_plano(), html(),
+    csv_bytes() y `nombre_base`. Lo reutiliza send_weekly_lunch_report.py.
+    """
     servidor = os.getenv('SMTP_SERVER', 'smtp-mail.outlook.com')
     puerto = int(os.getenv('SMTP_PORT', 587))
     usuario = os.getenv('SMTP_USER', 'no-reply@detcuador.com')
     clave = os.getenv('SMTP_PASS')
+
+    nombre_base = getattr(reporte, 'nombre_base', f"control_almuerzo_{reporte.fecha.isoformat()}")
 
     msg = EmailMessage()
     msg['Subject'] = reporte.asunto()
@@ -412,19 +426,15 @@ def enviar(reporte: ReporteAlmuerzo, destinos, dry_run=False):
     msg.add_alternative(reporte.html(), subtype='html')
     msg.add_attachment(
         reporte.csv_bytes(), maintype='text', subtype='csv',
-        filename=f"control_almuerzo_{reporte.fecha.isoformat()}.csv"
+        filename=f"{nombre_base}.csv"
     )
 
     if dry_run:
         print(f"[DRY-RUN] Asunto: {msg['Subject']}")
         print(f"[DRY-RUN] Para:   {msg['To']}")
-        print(f"[DRY-RUN] Sesiones: {len(reporte.filas)} | "
-              f"excedidos: {len(reporte.excedidos)} | "
-              f"sin marcar: {len(reporte.sin_marcar)} | "
-              f"en almuerzo: {len(reporte.en_almuerzo)}")
+        print(f"[DRY-RUN] {reporte.resumen_consola()}")
         # Fuera del repositorio: es un archivo de inspección, no un artefacto del proyecto
-        destino_html = os.path.join(tempfile.gettempdir(),
-                                    f"reporte_almuerzo_{reporte.fecha.isoformat()}.html")
+        destino_html = os.path.join(tempfile.gettempdir(), f"{nombre_base}.html")
         with open(destino_html, 'w', encoding='utf-8') as fh:
             fh.write(reporte.html())
         print(f"[DRY-RUN] HTML guardado en {destino_html}")

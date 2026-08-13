@@ -250,8 +250,9 @@ Almacén clave-valor de parámetros del sistema, editable desde el panel AdminV2
 | `almuerzo_retorno_min_minutos` | `8` | Umbral que separa un retorno real de un reintento por ticket no impreso. Por debajo, la marcación sigue siendo `INTENTO DE DUPLICADO` |
 | `almuerzo_horario_fin_retorno` | `15:30` | Hasta qué hora se aceptan retornos, más allá de `horario_fin`. Sin esta ventana, quien saca ticket a las 13:50 y vuelve a las 14:25 no quedaría registrado |
 | `almuerzo_excluir_ids` | `14,27` | `zk_id` sin control de tiempo (VIPs con derecho a ticket extra). No se les abre sesión, para que no aparezcan como `SIN_RETORNO` |
-| `almuerzo_email_activo` | `true` | Habilita el reporte diario por correo |
-| `almuerzo_email_destinos` | `agarcia@detcuador.com` | Destinatarios del reporte, separados por coma |
+| `almuerzo_email_activo` | `true` | Habilita los reportes por correo (diario **y** semanal) |
+| `almuerzo_email_destinos` | `agarcia@detcuador.com` | Destinatarios de los reportes, separados por coma |
+| `almuerzo_email_destinos_semanal` | *(no creada)* | Opcional. Si existe, recibe el resumen semanal en lugar de `almuerzo_email_destinos` |
 | `almuerzo_zonas_disponibles` | `BODEGA,LOGISTICA,SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO,ADMINISTRATIVOS` | Catálogo de zonas que ofrece el selector del panel (migración 006) |
 | `almuerzo_zonas_controladas` | `SOLIDO,LIQUIDO,SOPLADO,MANTENIMIENTO` | Subconjunto de zonas a las que SÍ se mide el tiempo. Editable en AdminV2 → Zonas (solo superadmin) |
 | `almuerzo_controlar_sin_zona` | `true` | Qué hacer con quien no tiene zona. `true` = se le controla, para no apagar la medición mientras se clasifica al personal |

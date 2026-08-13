@@ -1,12 +1,13 @@
 [Unit]
-Description=Dispara el reporte de almuerzo de lunes a viernes a las 14:30
+Description=Dispara el reporte diario de almuerzo a las 14:30
 Requires=comedor-lunch-report.service
 
 [Timer]
-# 14:30, lunes a viernes. El comedor cierra a las 14:00, así que a esta hora
-# el reporte ya está completo salvo los retornos que aún estén en curso: esos
-# salen en el bloque "Aún en almuerzo" y no cuentan como incumplimiento.
-OnCalendar=Mon..Fri 14:30
+# Todos los días a las 14:30: en la planta se almuerza también sábado y domingo.
+# El comedor cierra a las 14:00, así que a esta hora el reporte ya está completo
+# salvo los retornos que aún estén en curso: esos salen en el bloque "Aún en
+# almuerzo" y no cuentan como incumplimiento.
+OnCalendar=*-*-* 14:30
 # Si el servidor estuvo apagado a esa hora, se ejecuta al arrancar
 Persistent=true
 Unit=comedor-lunch-report.service

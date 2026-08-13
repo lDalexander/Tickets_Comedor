@@ -44,7 +44,8 @@ Más dos tareas programadas (`oneshot`, no residentes):
 | Temporizador | Cuándo | Qué hace |
 |--------------|--------|----------|
 | `comedor-maintenance.timer` | Diario 05:00 | Autodiagnóstico y reparación (`daily_maintenance.sh`) |
-| `comedor-lunch-report.timer` | Lun–Vie 14:30 | Envía el reporte de tiempo de almuerzo por correo (§8.1) |
+| `comedor-lunch-report.timer` | **Diario 14:30** | Reporte del día de tiempo de almuerzo (§8.1) |
+| `comedor-weekly-lunch-report.timer` | **Viernes 15:00** | Resumen semanal acumulado (§8.1) |
 
 ```bash
 systemctl list-timers 'comedor-*' --all
@@ -571,7 +572,7 @@ El worker vuelve al comportamiento anterior (la 2ª marcación es duplicado) en 
 
 ### Reporte diario por correo
 
-Lo envía `comedor-lunch-report.timer` de lunes a viernes a las 14:30, vía SMTP con las credenciales de `backend/python_core/.env`.
+Lo envía `comedor-lunch-report.timer` **todos los días** a las 14:30, vía SMTP con las credenciales de `backend/python_core/.env`. Es diario y no de lunes a viernes porque en la planta se almuerza también sábado y domingo.
 
 ```bash
 # Estado del temporizador y próximo disparo
@@ -598,6 +599,41 @@ Para desactivar el envío sin borrar el timer:
 ```bash
 mysql -u admin -p control_comedor -e \
   "UPDATE configuracion SET valor = 'false' WHERE clave = 'almuerzo_email_activo';"
+```
+
+Ese interruptor apaga **ambos** reportes, el diario y el semanal.
+
+### Resumen semanal acumulado
+
+Lo envía `comedor-weekly-lunch-report.timer` los **viernes a las 15:00**, media hora después del reporte diario de ese día. Suma el tiempo de más de **7 días (sábado a viernes)** y agrupa por persona, no por sesión: quien se pasó 5 minutos cada día aparece con 35 minutos acumulados, aunque ningún día individual pareciera grave.
+
+Contiene un ranking de tiempo acumulado (con barra proporcional), los días sin marcar por persona y la evolución día por día de la semana.
+
+```bash
+cd /home/john/comedor/Tickets_Comedor/backend/python_core
+
+# Probar sin enviar
+./venv/bin/python send_weekly_lunch_report.py --dry-run
+
+# La semana que cierra un viernes concreto
+./venv/bin/python send_weekly_lunch_report.py --hasta 2026-08-14
+
+# Otra ventana (quincena, mes)
+./venv/bin/python send_weekly_lunch_report.py --hasta 2026-08-31 --dias 30
+
+# Incluir los días reconstruidos del histórico (ver advertencia abajo)
+./venv/bin/python send_weekly_lunch_report.py --dry-run --incluir-inferidos
+```
+
+> **El semanal excluye los datos `BACKFILL` por defecto.** El histórico reconstruido contiene segundas marcaciones que no eran retornos: hay casos de 128 minutos de "almuerzo". En el reporte diario ese ruido se ve en contexto, pero el semanal **ordena personas por tiempo acumulado**, así que un dato inventado pondría a alguien al tope del ranking sin motivo. El correo indica cuántos día-persona quedaron fuera. Con `--incluir-inferidos` se ve el acumulado completo.
+
+Si se quiere enviar el semanal a destinatarios distintos del diario, basta crear la clave `almuerzo_email_destinos_semanal`; tiene prioridad sobre `almuerzo_email_destinos`:
+
+```bash
+mysql -u admin -p control_comedor -e \
+  "INSERT INTO configuracion (clave, valor) VALUES
+     ('almuerzo_email_destinos_semanal', 'gerencia@detcuador.com,rrhh@detcuador.com')
+   ON DUPLICATE KEY UPDATE valor = VALUES(valor);"
 ```
 
 ### Sesiones que quedaron abiertas
