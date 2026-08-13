@@ -6,7 +6,9 @@ import { Utensils, Ticket, Users, Star, ShieldCheck, TrendingUp, Activity, Clock
 const fetcher = url => axios.get(url).then(r => r.data);
 
 const S_CARD = {
-    background: 'rgba(30,41,59,0.6)',
+    // Fondo OPACO (antes rgba con alpha): los fondos translúcidos dejan ver
+    // los "fantasmas" de repintado del compositor en Chromium/Android
+    background: '#1e293b',
     border: '1px solid rgba(255,255,255,0.07)',
     borderRadius: '1rem',
     padding: '1.25rem 1.5rem',
@@ -45,7 +47,8 @@ export default function ResumenSection({ user }) {
             <div style={{
                 ...S_CARD,
                 marginBottom: '1.5rem',
-                background: 'linear-gradient(135deg, rgba(14,165,233,0.12) 0%, rgba(99,102,241,0.12) 100%)',
+                /* Gradiente sobre base OPACA (#1e293b) para no quedar translúcida */
+                background: 'linear-gradient(135deg, rgba(14,165,233,0.12) 0%, rgba(99,102,241,0.12) 100%), #1e293b',
                 border: '1px solid rgba(56,189,248,0.2)',
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -108,7 +111,7 @@ export default function ResumenSection({ user }) {
             {isLoading ? (
                 <p style={{ color: '#475569', fontSize: '0.9rem' }}>Cargando estadísticas...</p>
             ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                <div className="resumen-grid">
                     <MiniStat icon={Utensils} label="Total almuerzos" value={summary?.totalLunches} color="#38bdf8" />
                     <MiniStat icon={Ticket} label="Normal" value={summary?.totalNormal} color="#7dd3fc" />
                     <MiniStat icon={Utensils} label="Dieta" value={summary?.totalDieta} color="#10b981" />

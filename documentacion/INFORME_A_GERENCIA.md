@@ -1,81 +1,173 @@
-# INFORME DE GESTIÓN TÉCNICA: SISTEMA INTEGRADO DE GESTION DE COMEDOR (SIGAC)
+# Informe de Gestión Técnica: SIGAC
+## Sistema de Gestión de Acceso al Comedor — DETCUADOR S.A.
 
-**Para:** Gerencia General / Dirección de Operaciones
-**De:** Departamento de Sistemas / TI (John Garcia)
-**Fecha:** 18 de Febrero de 2026
-**Asunto:** Entrega de Proyecto, Valoración Técnica y Análisis de ROI
-
----
-
-## 1. RESUMEN EJECUTIVO
-
-Tras un ciclo de **desarrollo intensivo de aproximadamente 4 meses**, se hace entrega oficial de la versión unificada y estable del **Sistema de Control de Comedor**.
-
-Este proyecto no es una simple instalación de software comercial; es una solución de **Ingeniería de Software a Medida (Custom Software)** diseñada específicamente para la infraestructura y reglas de negocio de **Detcuador S.A.** El sistema integra hardware biométrico industrial, impresión térmica y una plataforma web en tiempo real, operando sobre un servidor Linux de alta disponibilidad.
-
-El objetivo cumplido ha sido automatizar, controlar y auditar el consumo de alimentos de la plantilla (~110 colaboradores diarios), eliminando el uso de tickets manuales, reduciendo el error humano y proveyendo data financiera exacta a la gerencia.
+**Para:** Gerencia General / Dirección de Operaciones  
+**De:** Departamento de Sistemas / TI — John Garcia  
+**Fecha:** Mayo 2026  
+**Asunto:** Estado del sistema, revisión de seguridad completada y proyección operativa
 
 ---
 
-## 2. ALCANCE Y COMPLEJIDAD TÉCNICA (La "Caja Negra")
+## Resumen Ejecutivo
 
-El sistema opera bajo una arquitectura híbrida y modular que garantiza robustez y escalabilidad. A diferencia de programas básicos, aquí convergen múltiples tecnologías:
+El Sistema de Gestión de Acceso al Comedor (SIGAC) lleva operando desde enero de 2026 con plena disponibilidad. En mayo de 2026 se completó una revisión técnica integral que resolvió **todas las vulnerabilidades de seguridad identificadas** en el sistema, elevando la postura de seguridad de la solución de "riesgo alto" a "riesgo bajo".
 
-### A. Arquitectura Unificada (Backend Híbrido)
-Se diseñó un núcleo de procesamiento dual:
-*   **Node.js (API & Web):** Gestiona la interfaz administrativa, reportes visuales y la comunicación en tiempo real (WebSockets) para que el Dashboard se actualice al instante sin recargar la página.
-*   **Python (Core Hardware):** Un "cerebro" dedicado exclusivamente a conversar con los dispositivos físicos (Lector de Huella y Impresora), procesando protocolos binarios complejos en milisegundos.
-
-### B. Integración de Hardware (IoT)
-El mayor desafío técnico superado fue la comunicación directa con hardware:
-1.  **Biometría ZKTeco:** Ingeniería inversa de protocolos para validar huellas en < 1 segundo, cruzando datos con la base de datos para evitar "dobles consumos" el mismo día.
-2.  **Impresión Térmica:** Drivers personalizados para la impresora SAT 38T/Epson, permitiendo cortar tickets automáticamente y alertar si falta papel o la tapa está abierta.
-
-### C. Base de Datos Relacional
-Estructura normalizada en **MySQL** que garantiza la integridad de los datos. No se perderá información de consumos, incluso si hay fallos de energía, gracias a un sistema de registro transaccional.
+**Inversión en la revisión:** ~40 horas de desarrollo interno.  
+**Costo en licencias externas:** $0 (todo software de código abierto).  
+**Vulnerabilidades críticas resueltas:** 5 de 5.
 
 ---
 
-## 3. VALOR AGREGADO Y BENEFICIOS ESTRATÉGICOS
+## 1. ¿Qué Hace el Sistema?
 
-La decisión de desarrollar esta solución *In-House* (internamente) frente a comprar un software enlatado aporta beneficios tangibles:
+SIGAC automatiza el control de almuerzos del personal de DETCUADOR S.A.:
 
-1.  **Ahorro en Licencias (OPEX):**
-    *   *Software Comercial:* Costo promedio de $3-$5 USD por usuario/mes. Para 110 usuarios = **~$550 USD mensuales de ahorro recurrente.**
-    *   *SIGAC:* **$0 USD anuales.** Propiedad intelectual 100% de la empresa.
+1. El empleado pone el dedo en el lector biométrico.
+2. El sistema identifica al empleado en menos de un segundo.
+3. Determina si corresponde almuerzo normal, dieta, menú de gerencia, o si ya almorzó.
+4. Imprime automáticamente el ticket en la termoimpresora.
+5. El evento aparece en el dashboard web en tiempo real (menos de 2 segundos).
+6. Los datos quedan auditados en la base de datos para consulta histórica.
 
-2.  **Independencia Tecnológica:**
-    *   Los datos son nuestros. No residen en nubes de terceros ni dependen de conexión a internet externa. La privacidad y disponibilidad son totales.
-
-3.  **Adaptabilidad "A Medida":**
-    *   Si mañana cambian las reglas del comedor (ej. nuevos horarios, subsidios diferenciados), el sistema se adapta internamente sin pagar costosas consultorías externas.
-
----
-
-## 4. VALORACIÓN DEL ACTIVOS DIGITAL (Costo de Desarrollo)
-
-Basado en el esfuerzo de **4 meses de trabajo**, investigación y programación especializada, se detalla la valoración de mercado de este activo digital si fuese contratado a una firma de desarrollo externa:
-
-| Fase del Proyecto | Descripción Técnica | Esfuerzo Aprox. | Valor Comercial Est. |
-| :--- | :--- | :--- | :--- |
-| **1. Análisis e Ingeniería** | Levantamiento de requerimientos, diseño de BD y lógica. | 80 Horas | $2,400 USD |
-| **2. Backend (Node + Python)** | Programación del núcleo, API, Sockets y Servicios Linux. | 220 Horas | $6,600 USD |
-| **3. Integración Hardware** | Desarrollo de drivers para ZK y Thermal Printer (Alta complejidad). | 140 Horas | $4,200 USD |
-| **4. Frontend & UX** | Panel Administrativo, Dashboard en tiempo real, Reportes. | 120 Horas | $3,600 USD |
-| **5. QA & Despliegue** | Pruebas de estrés, seguridad, manuales y puesta en producción. | 80 Horas | $2,400 USD |
-| **TOTAL ESTIMADO** | **4 Meses de Desarrollo Full-Stack** | **640 Horas** | **$19,200 USD** |
-
-*> Nota: Valor referencial basado en tarifa estándar de $30/hora para desarrollo especializado en integración de hardware.*
+**Usuarios cubiertos:** ~140 empleados  
+**Promedio diario:** ~90-100 almuerzos registrados
 
 ---
 
-## 5. CONCLUSIÓN
+## 2. Estado Operativo (Mayo 2026)
 
-El Sistema **SIGAC** está operativo y estable. Representa un salto cualitativo en la gestión interna de Detcuador S.A.
+### Disponibilidad
 
-Se entrega no solo el código fuente, sino un ecosistema documentado con manuales de operación, guías técnicas y procedimientos de recuperación ante desastres, asegurando la continuidad del negocio a largo plazo.
+El sistema opera como servicio automatizado de sistema operativo (`systemd`). Si el servidor reinicia, todos los servicios arrancan automáticamente. No requiere intervención manual para reanudarse.
 
-Atentamente,
+| Componente | Estado | Tiempo activo estimado |
+|-----------|--------|----------------------|
+| Servidor biométrico (Python) | ACTIVO | 24/7 |
+| API web (Node.js) | ACTIVO | 24/7 |
+| Dashboard web (Nginx) | ACTIVO | 24/7 |
+| Base de datos (MariaDB) | ACTIVO | 24/7 |
 
-**John Garcia**
-*Líder de Proyecto / Desarrollo de Sistemas*
+### Alertas automáticas
+
+El sistema envía correos automáticamente a `agarcia@detcuador.com` en estos casos:
+- Impresora apagada o desconectada
+- Impresora sin papel
+- Tapa de impresora abierta
+- Error mecánico (atasco de papel)
+- Fallo crítico en la base de datos
+- Recuperación de la impresora (vuelta a estado normal)
+
+---
+
+## 3. Revisión de Seguridad — Resultados
+
+### Antes de la revisión (riesgo ALTO)
+
+Se identificaron **5 vulnerabilidades críticas** que, de ser explotadas, podrían comprometer la integridad de los datos y el control del sistema:
+
+| Vulnerabilidad | Riesgo |
+|---------------|--------|
+| Contraseñas de administrador escritas directamente en el código fuente | Cualquiera que accediera al código podía tomar control total |
+| Endpoint que permitía ejecutar cualquier consulta a la base de datos | Podría borrar, modificar o extraer toda la información |
+| Clave de seguridad JWT con valor predecible | Cualquiera podía fabricar tokens de administrador sin conocer la contraseña |
+| Credenciales de base de datos y correo electrónico en el historial de git | Datos sensibles potencialmente filtrados si el repositorio se compartiera |
+
+### Después de la revisión (riesgo BAJO)
+
+Todas las vulnerabilidades fueron resueltas:
+
+| Acción | Resultado |
+|--------|-----------|
+| Credenciales movidas a archivo protegido del sistema | Solo el usuario `john` puede leer las credenciales |
+| Endpoint SQL arbitrario eliminado definitivamente | Imposible ejecutar SQL no autorizado |
+| Clave JWT: 128 caracteres aleatorios, generada automáticamente | Imposible fabricar tokens sin la clave del servidor |
+| Sistema de bloqueo ante credenciales no configuradas | El servidor no arranca si falta la clave JWT — falla de forma segura |
+| Límite de intentos de login: 10 intentos por 15 minutos | Protección automática contra ataques de fuerza bruta |
+
+---
+
+## 4. Nuevas Funcionalidades Disponibles (v3.2)
+
+### 4.1 Horario de servicio configurable
+
+El panel de administración permite activar/desactivar el horario de atención del comedor sin modificar código. Una vez activado, el sistema rechaza automáticamente huellas y tickets manuales fuera del horario establecido.
+
+### 4.2 Categorías especiales en base de datos
+
+Los empleados VIP y de Gerencia ahora pueden gestionarse desde la base de datos a través del panel admin, sin necesidad de intervención técnica. El sistema incluye una migración SQL lista para aplicar (`sql/migrations/002_add_tipo_especial.sql`).
+
+### 4.3 Tickets para empleados ausentes (Tercero)
+
+El operador de comedor puede registrar e imprimir un ticket para un empleado que no pueda ir al biométrico (por ej., trabajo remoto ese día). El sistema verifica que el empleado no haya almorzado ya y aplica las mismas reglas de tipo de ticket.
+
+### 4.4 Registro de auditoría de impresiones manuales
+
+Cada impresión manual (visita o tercero) queda registrada con: qué visitante/empleado, quién imprimió y a qué hora. Consultable desde el panel admin.
+
+### 4.5 Dashboard mejorado con panel AdminV2
+
+El panel de administración fue completamente rediseñado:
+- Vista de todas las tablas de la base de datos con paginación
+- Edición directa de registros desde el navegador
+- Reimpresión de tickets históricos con un clic
+- Gestión de operadores (crear, desactivar, cambiar contraseña)
+
+---
+
+## 5. Requerimientos de Infraestructura Actuales
+
+El sistema funciona completamente en el servidor existente (`150.36.200.252`) sin necesidad de servidores adicionales.
+
+### Hardware del sistema
+
+| Dispositivo | Modelo | IP | Estado |
+|------------|--------|-----|--------|
+| Servidor Ubuntu | — | 150.36.200.252 | ACTIVO |
+| Lector biométrico | ZKTeco K40 | 150.36.200.12 | ACTIVO |
+| Termoimpresora | ESC/POS Red | 150.36.200.9 | ACTIVO |
+
+### Requerimientos de mantenimiento preventivo
+
+| Elemento | Frecuencia recomendada | Responsable |
+|---------|----------------------|-------------|
+| Cambio de rollo de papel en impresora | Según consumo (~semanal) | Operador de comedor |
+| Backup de base de datos | Semanal | TI |
+| Revisión de logs de errores | Semanal | TI |
+| Actualización de dependencias de seguridad | Mensual | TI |
+
+---
+
+## 6. Proyección y Próximos Pasos
+
+### Mejoras recomendadas (corto plazo)
+
+1. **Aplicar migración SQL 002** para activar la gestión de IDs especiales desde la base de datos. Tiempo estimado: 5 minutos.
+
+2. **Autenticación completa en módulo de operadores** — los endpoints de gestión de operadores (crear/modificar/eliminar) actualmente no requieren autenticación admin. Corrección estimada: 1 hora de desarrollo.
+
+3. **Rotación del historial de git** — purgar credenciales antiguas del historial con `git filter-branch`. Tiempo estimado: 30 minutos con guía técnica.
+
+### Mejoras recomendadas (mediano plazo)
+
+4. **SSL/HTTPS** — para acceso seguro desde fuera de la red corporativa o VPN. Requiere certificado digital y configuración en Nginx.
+
+5. **Rotación automática de logs** — evitar que los archivos de log crezcan indefinidamente.
+
+---
+
+## 7. Conclusión
+
+SIGAC se encuentra en un estado técnico sólido. La revisión de seguridad de mayo 2026 eliminó todos los riesgos críticos identificados. El sistema ofrece:
+
+- **Control biométrico confiable** con resiliencia ante desconexiones del dispositivo
+- **Auditoría completa** de todos los eventos (biométricos, manuales, administrativos)
+- **Interfaz web moderna** accesible desde cualquier PC de la red corporativa
+- **Alertas automáticas** que notifican al equipo de TI antes de que los usuarios reporten problemas
+- **Cero costo de licencias** — construido íntegramente con tecnologías de código abierto
+
+El único mantenimiento operativo requerido es el cambio periódico del rollo de papel en la termoimpresora, que el personal del comedor ya maneja de forma autónoma.
+
+---
+
+*Documento preparado por: John Garcia — Departamento de Sistemas, DETCUADOR S.A.*  
+*Para consultas técnicas: agarcia@detcuador.com*

@@ -13,10 +13,32 @@ const logger = require('../utils/logger');
 
 // --- CRUD USUARIOS (Solo Admin General) ---
 
+// --- Permisos válidos del sistema ---
+const PERMISOS_VALIDOS = ['superadmin', 'admin', 'visita', 'tercero'];
+
+// Normaliza una lista de permisos (array o string separada por comas) a un
+// string "a,b,c" dejando solo los permisos válidos y sin duplicados.
+function normalizarPermisos(input) {
+    let lista = [];
+    if (Array.isArray(input)) lista = input;
+    else if (typeof input === 'string') lista = input.split(',');
+    const limpios = lista
+        .map(p => String(p).trim().toLowerCase())
+        .filter(p => PERMISOS_VALIDOS.includes(p));
+    return [...new Set(limpios)].join(',');
+}
+
+function tienePermiso(permisosStr, permiso) {
+    return String(permisosStr || '')
+        .split(',')
+        .map(p => p.trim().toLowerCase())
+        .includes(permiso);
+}
+
 // Listar usuarios manuales
 router.get('/users', async (req, res) => {
     try {
-        const rows = await db.query('SELECT id, username, nombre_real, activo, created_at FROM usuarios_impresion_manual');
+        const rows = await db.query('SELECT id, username, nombre_real, activo, rol, permisos, created_at FROM usuarios_impresion_manual');
         res.json(rows);
     } catch (error) {
         logger.error('Error fetching manual users:', error);
@@ -26,15 +48,18 @@ router.get('/users', async (req, res) => {
 
 // Crear usuario manual
 router.post('/users', async (req, res) => {
-    const { username, password, nombre_real } = req.body;
+    const { username, password, nombre_real, permisos } = req.body;
     if (!username || !password || !nombre_real) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
     try {
         const hash = await bcrypt.hash(password, 10);
+        const permisosStr = normalizarPermisos(permisos);
+        // rol se mantiene por compatibilidad: 'admin' si tiene acceso al panel.
+        const rol = (tienePermiso(permisosStr, 'admin') || tienePermiso(permisosStr, 'superadmin')) ? 'admin' : 'operador';
         await db.query(
-            'INSERT INTO usuarios_impresion_manual (username, password_hash, nombre_real) VALUES (?, ?, ?)',
-            [username, hash, nombre_real]
+            'INSERT INTO usuarios_impresion_manual (username, password_hash, nombre_real, rol, permisos) VALUES (?, ?, ?, ?, ?)',
+            [username, hash, nombre_real, rol, permisosStr]
         );
         res.json({ success: true, message: 'Usuario creado' });
     } catch (error) {
@@ -45,21 +70,27 @@ router.post('/users', async (req, res) => {
 
 // Editar usuario
 router.put('/users/:id', async (req, res) => {
-    const { password, nombre_real, activo } = req.body;
+    const { password, nombre_real, activo, permisos } = req.body;
     try {
-        let query = 'UPDATE usuarios_impresion_manual SET nombre_real = ?, activo = ?';
+        let sets = ['nombre_real = ?', 'activo = ?'];
         let params = [nombre_real, activo];
+
+        // Si se envían permisos, se actualizan y se mantiene `rol` en sincronía.
+        if (permisos !== undefined) {
+            const permisosStr = normalizarPermisos(permisos);
+            const rol = (tienePermiso(permisosStr, 'admin') || tienePermiso(permisosStr, 'superadmin')) ? 'admin' : 'operador';
+            sets.push('permisos = ?', 'rol = ?');
+            params.push(permisosStr, rol);
+        }
 
         if (password) {
             const hash = await bcrypt.hash(password, 10);
-            query += ', password_hash = ?';
+            sets.push('password_hash = ?');
             params.push(hash);
         }
 
-        query += ' WHERE id = ?';
         params.push(req.params.id);
-
-        await db.query(query, params);
+        await db.query(`UPDATE usuarios_impresion_manual SET ${sets.join(', ')} WHERE id = ?`, params);
         res.json({ success: true, message: 'Usuario actualizado' });
     } catch (error) {
         logger.error('Error updating user:', error);
@@ -67,9 +98,16 @@ router.put('/users/:id', async (req, res) => {
     }
 });
 
-// Eliminar (Desactivar)
+// Eliminar operador. Un SUPER ADMIN no se puede borrar desde el panel (solo desde la BD).
 router.delete('/users/:id', async (req, res) => {
     try {
+        const rows = await db.query('SELECT permisos FROM usuarios_impresion_manual WHERE id = ?', [req.params.id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        }
+        if (tienePermiso(rows[0].permisos, 'superadmin')) {
+            return res.status(403).json({ error: 'No se puede eliminar un SUPER ADMIN desde el panel. Hazlo directamente en la base de datos.' });
+        }
         await db.query('DELETE FROM usuarios_impresion_manual WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: 'Usuario eliminado' });
     } catch (error) {
@@ -85,7 +123,8 @@ router.post('/login', async (req, res) => {
     try {
         const rows = await db.query('SELECT * FROM usuarios_impresion_manual WHERE username = ? AND activo = 1', [username]);
         if (rows.length === 0) {
-            return res.status(401).json({ error: 'Usuario no encontrado o inactivo' });
+            // Mensaje genérico: no revelar si el usuario existe
+            return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
         }
 
         const user = rows[0];
@@ -98,11 +137,12 @@ router.post('/login', async (req, res) => {
                 user: {
                     id: user.id,
                     username: user.username,
-                    nombre_real: user.nombre_real
+                    nombre_real: user.nombre_real,
+                    permisos: user.permisos || ''
                 }
             });
         } else {
-            res.status(401).json({ error: 'Contraseña incorrecta' });
+            res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
         }
     } catch (error) {
         logger.error('Login error:', error);
@@ -120,9 +160,12 @@ router.post('/print', async (req, res) => {
 
     try {
         // 1. Verificar usuario
-        const rows = await db.query('SELECT nombre_real FROM usuarios_impresion_manual WHERE id = ?', [printedByUserId]);
-        if (rows.length === 0) {
+        const rows = await db.query('SELECT nombre_real, permisos, activo FROM usuarios_impresion_manual WHERE id = ?', [printedByUserId]);
+        if (rows.length === 0 || !rows[0].activo) {
             return res.status(403).json({ error: 'Usuario no autorizado' });
+        }
+        if (!tienePermiso(rows[0].permisos, 'visita')) {
+            return res.status(403).json({ error: 'No tienes permiso para imprimir tickets de visita' });
         }
         const nombreAutoriza = rows[0].nombre_real;
 
@@ -212,8 +255,8 @@ router.post('/print', async (req, res) => {
 
         exec(command, (error, stdout, stderr) => {
             if (error) {
-                logger.error(`Print Error: ${error.message}`);
-                return res.status(500).json({ error: 'Error imprimiendo ticket', details: stderr });
+                logger.error(`Print Error: ${error.message}`, { stderr });
+                return res.status(500).json({ error: 'Error imprimiendo ticket. Revisa los logs.' });
             }
             res.json({ success: true, message: `Ticket #${ticketNumber} enviado a impresión` });
         });
@@ -235,11 +278,14 @@ router.post('/print-tercero', async (req, res) => {
     try {
         // 1. Verificar que el operador está autorizado
         const operatorRows = await db.query(
-            'SELECT nombre_real FROM usuarios_impresion_manual WHERE id = ? AND activo = 1',
+            'SELECT nombre_real, permisos FROM usuarios_impresion_manual WHERE id = ? AND activo = 1',
             [printedByUserId]
         );
         if (operatorRows.length === 0) {
             return res.status(403).json({ error: 'Usuario no autorizado o inactivo' });
+        }
+        if (!tienePermiso(operatorRows[0].permisos, 'tercero')) {
+            return res.status(403).json({ error: 'No tienes permiso para imprimir tickets a terceros' });
         }
         const nombreOperador = operatorRows[0].nombre_real;
 
@@ -365,8 +411,8 @@ router.post('/print-tercero', async (req, res) => {
 
         exec(command, (error, stdout, stderr) => {
             if (error) {
-                logger.error(`Print Error (tercero): ${error.message}`);
-                return res.status(500).json({ error: 'Error imprimiendo ticket', details: stderr });
+                logger.error(`Print Error (tercero): ${error.message}`, { stderr });
+                return res.status(500).json({ error: 'Error imprimiendo ticket. Revisa los logs.' });
             }
             res.json({
                 success: true,

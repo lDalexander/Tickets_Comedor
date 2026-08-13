@@ -27,7 +27,7 @@ export default function AdminLogin({ onLogin }) {
 
     return (
         <div style={{
-            minHeight: '100vh',
+            minHeight: '100dvh',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -42,8 +42,7 @@ export default function AdminLogin({ onLogin }) {
             <div style={{
                 width: '100%',
                 maxWidth: '400px',
-                background: 'rgba(30, 41, 59, 0.8)',
-                backdropFilter: 'blur(20px)',
+                background: '#1e293b',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '1.5rem',
                 padding: '2.5rem 2rem',

@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Edit2, Save, X, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Eye, EyeOff, Lock } from 'lucide-react';
 
-const EMPTY_FORM = { username: '', password: '', nombre_real: '', activo: 1, rol: 'operador' };
+// Permisos del sistema. `locked: true` => no editable desde el panel (solo BD).
+const PERMISOS = [
+    { key: 'superadmin', label: 'Super Admin', color: '#f472b6', locked: true,  desc: 'Acceso total. Solo se asigna/quita desde la base de datos.' },
+    { key: 'admin',      label: 'Admin',       color: '#a78bfa', locked: false, desc: 'Acceso al panel de administración.' },
+    { key: 'visita',     label: 'Visita',      color: '#fb923c', locked: false, desc: 'Imprimir tickets de visita.' },
+    { key: 'tercero',    label: 'Tercero',     color: '#6ee7b7', locked: false, desc: 'Imprimir tickets a terceros.' },
+];
+
+const parsePerms = s => String(s || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+
+const EMPTY_FORM = { username: '', password: '', nombre_real: '', permisos: ['visita', 'tercero'] };
 
 export default function OperadoresSection({ authHeaders }) {
     const [users, setUsers] = useState([]);
@@ -26,23 +36,18 @@ export default function OperadoresSection({ authHeaders }) {
     const handleCreate = async (e) => {
         e.preventDefault();
         if (!formData.username || !formData.password || !formData.nombre_real) {
-            setError('Todos los campos son requeridos');
+            setError('Usuario, nombre y contraseña son requeridos');
             return;
         }
         setSaving(true);
         setError('');
         try {
-            await axios.post('/api/manual-tickets/users', formData);
-            // Set rol via admin route
-            const allUsers = await axios.get('/api/manual-tickets/users');
-            const created = allUsers.data.find(u => u.username === formData.username);
-            if (created && formData.rol === 'admin') {
-                await axios.put(
-                    `/api/admin/data/usuarios_impresion_manual/id/${created.id}`,
-                    { rol: 'admin' },
-                    { headers: authHeaders }
-                );
-            }
+            await axios.post('/api/manual-tickets/users', {
+                username: formData.username,
+                password: formData.password,
+                nombre_real: formData.nombre_real,
+                permisos: formData.permisos,
+            });
             setFormData(EMPTY_FORM);
             setShowForm(false);
             load();
@@ -53,13 +58,13 @@ export default function OperadoresSection({ authHeaders }) {
         }
     };
 
-    const handleDelete = async (id, nombre) => {
-        if (!window.confirm(`¿Eliminar operador "${nombre}"?`)) return;
+    const handleDelete = async (u) => {
+        if (!window.confirm(`¿Eliminar operador "${u.nombre_real}"?`)) return;
         try {
-            await axios.delete(`/api/manual-tickets/users/${id}`);
-            setUsers(p => p.filter(u => u.id !== id));
-        } catch {
-            alert('Error al eliminar');
+            await axios.delete(`/api/manual-tickets/users/${u.id}`);
+            setUsers(p => p.filter(x => x.id !== u.id));
+        } catch (err) {
+            alert(err.response?.data?.error || 'Error al eliminar');
         }
     };
 
@@ -81,18 +86,31 @@ export default function OperadoresSection({ authHeaders }) {
         }
     };
 
-    const toggleRol = async (u) => {
-        const newRol = u.rol === 'admin' ? 'operador' : 'admin';
+    // Activar/desactivar un permiso concreto de un operador.
+    const togglePerm = async (u, key) => {
+        const current = parsePerms(u.permisos);
+        const next = current.includes(key) ? current.filter(p => p !== key) : [...current, key];
+        const nextStr = next.join(',');
+        // Optimista
+        setUsers(p => p.map(x => x.id === u.id ? { ...x, permisos: nextStr } : x));
         try {
-            await axios.put(
-                `/api/admin/data/usuarios_impresion_manual/id/${u.id}`,
-                { rol: newRol },
-                { headers: authHeaders }
-            );
-            setUsers(p => p.map(x => x.id === u.id ? { ...x, rol: newRol } : x));
+            await axios.put(`/api/manual-tickets/users/${u.id}`, {
+                nombre_real: u.nombre_real,
+                activo: u.activo,
+                permisos: next,
+            });
         } catch {
-            alert('Error al cambiar rol');
+            // Revertir en caso de error
+            setUsers(p => p.map(x => x.id === u.id ? { ...x, permisos: u.permisos } : x));
+            alert('Error al cambiar permisos');
         }
+    };
+
+    const toggleFormPerm = (key) => {
+        setFormData(p => ({
+            ...p,
+            permisos: p.permisos.includes(key) ? p.permisos.filter(x => x !== key) : [...p.permisos, key],
+        }));
     };
 
     if (loading) return <p style={{ color: '#475569', fontSize: '0.9rem' }}>Cargando operadores...</p>;
@@ -158,11 +176,29 @@ export default function OperadoresSection({ authHeaders }) {
                                 {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
                             </button>
                         </div>
-                        <select value={formData.rol} onChange={e => setFormData(p => ({ ...p, rol: e.target.value }))} style={inputSt}>
-                            <option value="operador">Operador (solo tickets)</option>
-                            <option value="admin">Admin (acceso panel)</option>
-                        </select>
                     </div>
+
+                    {/* Permisos del nuevo operador */}
+                    <div style={{ marginBottom: '1rem' }}>
+                        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Permisos
+                        </p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            {PERMISOS.map(perm => (
+                                <PermChip
+                                    key={perm.key}
+                                    perm={perm}
+                                    active={formData.permisos.includes(perm.key)}
+                                    disabled={perm.locked}
+                                    onToggle={() => !perm.locked && toggleFormPerm(perm.key)}
+                                />
+                            ))}
+                        </div>
+                        <p style={{ margin: '0.5rem 0 0', fontSize: '0.72rem', color: '#475569' }}>
+                            El rol <strong>Super Admin</strong> solo se asigna desde la base de datos.
+                        </p>
+                    </div>
+
                     {error && <p style={{ margin: '0 0 0.75rem', color: '#fca5a5', fontSize: '0.82rem' }}>{error}</p>}
                     <button type="submit" disabled={saving}
                         style={{ padding: '0.55rem 1.25rem', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', border: 'none', borderRadius: '0.5rem', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '0.85rem' }}>
@@ -175,6 +211,8 @@ export default function OperadoresSection({ authHeaders }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {users.map(u => {
                     const isEditingThis = editingId === u.id;
+                    const perms = parsePerms(u.permisos);
+                    const esSuperadmin = perms.includes('superadmin');
                     return (
                         <div key={u.id} style={{
                             display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
@@ -191,20 +229,25 @@ export default function OperadoresSection({ authHeaders }) {
                                         onChange={e => setEditData(p => ({ ...p, nombre_real: e.target.value }))}
                                         style={{ ...inputSt, marginBottom: 0 }} />
                                 ) : (
-                                    <p style={{ margin: 0, fontWeight: '600', color: '#f1f5f9', fontSize: '0.9rem' }}>{u.nombre_real}</p>
+                                    <p style={{ margin: 0, fontWeight: '600', color: '#f1f5f9', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                        {u.nombre_real}
+                                        {esSuperadmin && <Lock size={12} color="#f472b6" title="Super Admin — protegido" />}
+                                    </p>
                                 )}
                                 <p style={{ margin: '0.1rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>@{u.username}</p>
                             </div>
 
-                            {/* Badges */}
+                            {/* Permisos (toggles) */}
                             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                <span style={{
-                                    padding: '0.2rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: '600',
-                                    background: u.rol === 'admin' ? 'rgba(139,92,246,0.15)' : 'rgba(56,189,248,0.1)',
-                                    color: u.rol === 'admin' ? '#a78bfa' : '#38bdf8',
-                                }}>
-                                    {u.rol === 'admin' ? 'Admin' : 'Operador'}
-                                </span>
+                                {PERMISOS.map(perm => (
+                                    <PermChip
+                                        key={perm.key}
+                                        perm={perm}
+                                        active={perms.includes(perm.key)}
+                                        disabled={perm.locked}
+                                        onToggle={() => !perm.locked && togglePerm(u, perm.key)}
+                                    />
+                                ))}
                                 <span style={{
                                     padding: '0.2rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: '600',
                                     background: u.activo ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
@@ -233,14 +276,17 @@ export default function OperadoresSection({ authHeaders }) {
                                             style={{ ...iconBtn, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
                                             <Edit2 size={14} />
                                         </button>
-                                        <button onClick={() => toggleRol(u)} title={u.rol === 'admin' ? 'Quitar admin' : 'Dar acceso admin'}
-                                            style={{ ...iconBtn, background: u.rol === 'admin' ? 'rgba(139,92,246,0.1)' : 'rgba(56,189,248,0.08)', border: `1px solid ${u.rol === 'admin' ? 'rgba(139,92,246,0.2)' : 'rgba(56,189,248,0.15)'}`, color: u.rol === 'admin' ? '#a78bfa' : '#38bdf8' }}>
-                                            {u.rol === 'admin' ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
-                                        </button>
-                                        <button onClick={() => handleDelete(u.id, u.nombre_real)} title="Eliminar"
-                                            style={{ ...iconBtn, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#f87171' }}>
-                                            <Trash2 size={14} />
-                                        </button>
+                                        {esSuperadmin ? (
+                                            <button title="Un Super Admin solo se elimina desde la base de datos" disabled
+                                                style={{ ...iconBtn, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', color: '#334155', cursor: 'not-allowed' }}>
+                                                <Lock size={14} />
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => handleDelete(u)} title="Eliminar"
+                                                style={{ ...iconBtn, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#f87171' }}>
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -249,6 +295,34 @@ export default function OperadoresSection({ authHeaders }) {
                 })}
             </div>
         </div>
+    );
+}
+
+// Chip/toggle de permiso. Si `disabled`, se muestra el estado pero no es editable.
+function PermChip({ perm, active, disabled, onToggle }) {
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            disabled={disabled}
+            title={disabled ? perm.desc : `${active ? 'Quitar' : 'Activar'}: ${perm.desc}`}
+            style={{
+                display: 'flex', alignItems: 'center', gap: '0.3rem',
+                padding: '0.25rem 0.6rem',
+                borderRadius: '999px',
+                fontSize: '0.72rem',
+                fontWeight: '600',
+                cursor: disabled ? 'default' : 'pointer',
+                background: active ? `${perm.color}22` : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${active ? `${perm.color}55` : 'rgba(255,255,255,0.08)'}`,
+                color: active ? perm.color : '#475569',
+                opacity: disabled && !active ? 0.5 : 1,
+                transition: 'all 0.15s',
+            }}
+        >
+            {disabled && <Lock size={10} />}
+            {perm.label}
+        </button>
     );
 }
 

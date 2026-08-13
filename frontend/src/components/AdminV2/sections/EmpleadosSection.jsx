@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { Search, Save, CheckCircle, XCircle } from 'lucide-react';
+import { Search, Save, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 
 const ROLES = ['Operativo', 'Administrativo', 'Gerencia', 'Visitante'];
 const MENU_TYPES = ['Normal', 'Dieta'];
@@ -65,6 +65,19 @@ export default function EmpleadosSection({ authHeaders }) {
 
     const cancelEdit = (zkId) => {
         setEditing(p => { const n = { ...p }; delete n[zkId]; return n; });
+    };
+
+    const handleDelete = async (emp) => {
+        if (!window.confirm(`¿Eliminar al empleado "${emp.nombre_completo}" (ID ${emp.zk_id})?\n\nEsta acción no se puede deshacer.`)) return;
+        try {
+            await axios.delete(
+                `/api/admin/data/usuarios/zk_id/${emp.zk_id}`,
+                { headers: authHeaders }
+            );
+            setEmployees(p => p.filter(e => e.zk_id !== emp.zk_id));
+        } catch {
+            alert('Error al eliminar el empleado');
+        }
     };
 
     if (loading) return <p style={{ color: '#475569', fontSize: '0.9rem' }}>Cargando empleados...</p>;
@@ -167,10 +180,16 @@ export default function EmpleadosSection({ authHeaders }) {
                                                     </button>
                                                 </div>
                                             ) : (
-                                                <button onClick={() => startEdit(emp)}
-                                                    style={{ ...btnStyle, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}>
-                                                    Editar
-                                                </button>
+                                                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                                    <button onClick={() => startEdit(emp)}
+                                                        style={{ ...btnStyle, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}>
+                                                        Editar
+                                                    </button>
+                                                    <button onClick={() => handleDelete(emp)} title="Eliminar empleado"
+                                                        style={{ ...btnStyle, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#f87171' }}>
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
                                             )
                                         )}
                                     </td>

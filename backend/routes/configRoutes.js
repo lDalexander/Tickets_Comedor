@@ -3,13 +3,15 @@ const router = express.Router();
 const db = require('../db');
 const logger = require('../utils/logger');
 const jwt = require('jsonwebtoken');
+const { obtenerEspecialesCacheado } = require('../repositories/statsRepository');
 
-const JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'comedor_admin_secret';
+const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
+if (!JWT_SECRET) {
+    console.error('FATAL: ADMIN_JWT_SECRET no configurada. El servidor no puede arrancar.');
+    process.exit(1);
+}
 
 const verifyAdmin = (req, res, next) => {
-    const secret = req.headers['x-admin-secret'];
-    if (secret === 'admin123') return next();
-
     const authHeader = req.headers['authorization'];
     if (authHeader && authHeader.startsWith('Bearer ')) {
         try {
@@ -19,7 +21,6 @@ const verifyAdmin = (req, res, next) => {
             return res.status(401).json({ error: 'Token inválido o expirado' });
         }
     }
-
     res.status(403).json({ error: 'Unauthorized' });
 };
 
@@ -66,6 +67,18 @@ router.post('/', verifyAdmin, async (req, res) => {
         res.status(500).json({ error: 'Database error' });
     } finally {
         if (connection) connection.release();
+    }
+});
+
+// GET: IDs de usuarios especiales (VIP y Gerencia) — resultado cacheado 5 minutos
+// Consumido por el worker Python al arrancar y cada 10 minutos para refrescar
+router.get('/especiales', async (req, res) => {
+    try {
+        const especiales = await obtenerEspecialesCacheado();
+        res.json(especiales);
+    } catch (error) {
+        logger.error('Error fetching especiales:', error);
+        res.status(500).json({ error: 'Error interno del servidor. Contacta al administrador.' });
     }
 });
 

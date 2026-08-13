@@ -1,17 +1,26 @@
+# SERVICIO REEMPLAZADO POR NGINX
+#
+# El servidor de desarrollo Vite ya no se usa en producción.
+# Nginx sirve los archivos estáticos de frontend/dist/ directamente.
+#
+# Para deshabilitar este servicio:
+#   sudo systemctl stop comedor-frontend
+#   sudo systemctl disable comedor-frontend
+#
+# Para desarrollo local (sin Nginx):
+#   cd frontend && npm run dev
+
 [Unit]
-Description=Comedor Frontend (Vite)
+Description=Comedor Frontend Vite — SOLO DESARROLLO (produccion usa Nginx)
 After=network.target
 
 [Service]
 Type=simple
 User=john
 WorkingDirectory=/home/john/comedor/Tickets_Comedor/frontend
-# --host 0.0.0.0 allows access from other computers on the network
 ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0
-Restart=always
+Restart=on-failure
 RestartSec=5
-
-# Output to journald
 StandardOutput=journal
 StandardError=journal
 

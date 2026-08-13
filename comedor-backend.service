@@ -8,10 +8,11 @@ StartLimitIntervalSec=0
 Type=simple
 User=john
 WorkingDirectory=/home/john/comedor/Tickets_Comedor/backend
+EnvironmentFile=/etc/comedor/secrets.env
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=5
-Environment=PORT=5001
+Environment=PORT=5002
 Environment=NODE_ENV=production
 
 # Output to journald (view with journalctl -u comedor-backend)

@@ -35,15 +35,20 @@ router.get('/stats/daily', async (req, res) => {
 
 router.get('/stats/history', async (req, res) => {
     try {
-        const rows = await statsRepository.getHistory(req);
+        const result = await statsRepository.getHistory(req);
 
-        const formattedRows = rows.map(r => ({
+        const format = r => ({
             ...r,
             date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date,
             status: r.type === 'Intento de Duplicado' ? 'Bloqueado' : 'Exitoso'
-        }));
+        });
 
-        res.json(formattedRows);
+        // Modo paginado: el repositorio devuelve {data, total, page, pageSize}
+        if (result && !Array.isArray(result) && Array.isArray(result.data)) {
+            res.json({ ...result, data: result.data.map(format) });
+        } else {
+            res.json(result.map(format));
+        }
         logger.info(`Fetched history logs with type=${req.query.type || 'all'}`);
     } catch (error) {
         logger.error('Error fetching history logs', error);

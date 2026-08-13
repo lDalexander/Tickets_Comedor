@@ -96,7 +96,19 @@ const Dashboard = () => {
         return { bg: 'rgba(56, 189, 248, 0.15)', color: '#7dd3fc', label: 'Normal' };
     };
 
-    if (loading && !summary) return <div className="page-header" style={{ textAlign: 'center' }}>Cargando datos...</div>;
+    if (loading && !summary) return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '60dvh',
+            padding: '2rem',
+            textAlign: 'center',
+            color: '#94a3b8',
+        }}>
+            Cargando datos...
+        </div>
+    );
 
     const safeDailyData = dailyData || [];
     const safeHistoryLog = historyLog || [];

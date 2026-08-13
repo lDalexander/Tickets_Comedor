@@ -23,6 +23,8 @@ body {
     radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.1) 0%, transparent 40%),
     radial-gradient(circle at 90% 80%, rgba(129, 140, 248, 0.1) 0%, transparent 40%);
   min-height: 100vh;
+  /* dvh: evita saltos/recortes por la barra de URL en móvil */
+  min-height: 100dvh;
 }
 
 /* Scrollbar */
@@ -56,7 +58,9 @@ body {
   border-radius: 1rem;
   padding: 1.5rem;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  /* Solo animar transform (la sombra se aplica sin transición para
+     evitar repaints/capas GPU costosas en móvil) */
+  transition: transform 0.2s ease;
 }
 
 .card:hover {
@@ -557,5 +561,71 @@ h3 {
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
+}
+
+/* =========================================
+   FIX COMPOSITING GPU EN MÓVIL
+   En Android (Brave/Chromium) backdrop-filter (blur) junto con
+   sombras grandes y animaciones de filter/box-shadow provocan
+   corrupción de render: textos superpuestos y "ruido"/pixeles
+   corruptos en la mitad inferior de la pantalla.
+   En pantallas pequeñas reemplazamos el blur por fondos sólidos
+   semitransparentes y reducimos las sombras a capas ligeras.
+   El selector [style*="backdrop-filter"] cubre los estilos inline
+   de los componentes React (AdminLogin, AdminV2Panel, RegistrosSection).
+   ========================================= */
+/* Grid de tarjetas del Resumen (admin) — responsive real vía clase */
+.resumen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 767px) {
+
+  /* Resumen: una sola columna fluida en móvil */
+  .resumen-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 0) Fondo sólido sin gradientes: los radial-gradient del body se
+        re-rasterizan en cada scroll y generan "ruido"/artefactos en Android */
+  body {
+    background-image: none;
+    background-color: var(--bg-dark);
+  }
+
+  /* 1) Desactivar TODO backdrop-filter (clases CSS + estilos inline) */
+  .card,
+  .modal-overlay,
+  [style*="backdrop-filter"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* 2) Fondos sólidos semitransparentes en sustitución del blur */
+  .card {
+    background: rgba(30, 41, 59, 0.95);
+  }
+
+  .modal-overlay {
+    background: rgba(15, 23, 42, 0.85);
+  }
+
+  /* 3) Sombras ligeras: evitar capas GPU grandes que se corrompen */
+  .card,
+  .card:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  }
+
+  .modal-content {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  /* 4) Sin transform en hover (no aplica en touch y evita crear capas) */
+  .card:hover {
+    transform: none;
+  }
 }

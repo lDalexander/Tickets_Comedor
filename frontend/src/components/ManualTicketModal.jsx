@@ -22,6 +22,11 @@ const ManualTicketModal = ({ onClose }) => {
         try {
             const res = await axios.post('/api/manual-tickets/login', { username, password });
             if (res.data.success) {
+                const permisos = String(res.data.user?.permisos || '').split(',').map(p => p.trim().toLowerCase());
+                if (!permisos.includes('visita')) {
+                    setError('Este usuario no tiene permiso para imprimir tickets de visita');
+                    return;
+                }
                 setUser(res.data.user);
                 setStep('print');
             }

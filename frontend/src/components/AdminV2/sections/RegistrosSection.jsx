@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import axios from 'axios';
-import { Printer, Calendar, Filter, CheckCircle, XCircle, Trash2, Edit2, X, Save } from 'lucide-react';
+import { Printer, Calendar, Filter, CheckCircle, XCircle, Trash2, Edit2, X, Save, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const PAGE_SIZES = [20, 50, 100, 250];
 
 const fetcher = url => axios.get(url).then(r => r.data);
 
@@ -79,8 +81,7 @@ function EditModal({ row, onClose, onSave }) {
                 onClick={onClose}
                 style={{
                     position: 'fixed', inset: 0,
-                    background: 'rgba(0,0,0,0.65)',
-                    backdropFilter: 'blur(4px)',
+                    background: 'rgba(0,0,0,0.75)',
                     zIndex: 100,
                 }}
             />
@@ -186,22 +187,73 @@ function Field({ label, children }) {
 // Sección principal
 // ──────────────────────────────────────────────────
 export default function RegistrosSection({ authHeaders }) {
-    const [dateRange, setDateRange]   = useState({ start: '', end: '' });
-    const [typeFilter, setTypeFilter] = useState('');
-    const [reprintMsg, setReprintMsg] = useState({});
-    const [editingRow, setEditingRow] = useState(null);
+    const [dateRange, setDateRange]     = useState({ start: '', end: '' });
+    const [typeFilter, setTypeFilter]   = useState('');
+    const [reprintMsg, setReprintMsg]   = useState({});
+    const [editingRow, setEditingRow]   = useState(null);
+    const [downloading, setDownloading] = useState(false);
+    const [pageSize, setPageSize]       = useState(20);
+    const [page, setPage]               = useState(1);
+
+    // Al cambiar filtros o tamaño de página, volver a la página 1.
+    useEffect(() => { setPage(1); }, [dateRange.start, dateRange.end, typeFilter, pageSize]);
+
+    const handleDownloadExcel = async () => {
+        setDownloading(true);
+        try {
+            const params = new URLSearchParams();
+            if (dateRange.start) params.set('startDate', dateRange.start);
+            if (dateRange.end)   params.set('endDate',   dateRange.end);
+
+            const response = await fetch(`/api/admin/report/excel?${params}`, {
+                headers: authHeaders,
+            });
+
+            if (!response.ok) {
+                alert('Error al generar el reporte. Revisa los logs del servidor.');
+                return;
+            }
+
+            const blob = await response.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+
+            // Intentar obtener el nombre de archivo del header Content-Disposition
+            const disp = response.headers.get('content-disposition') || '';
+            const match = disp.match(/filename="?([^"]+)"?/);
+            a.download = match ? match[1] : `reporte_admin_${dateRange.start || 'hoy'}_${dateRange.end || 'hoy'}.xlsx`;
+
+            a.href = url;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Error de red al descargar el reporte.');
+        } finally {
+            setDownloading(false);
+        }
+    };
 
     const params = new URLSearchParams();
     if (dateRange.start) params.append('startDate', dateRange.start);
     if (dateRange.end)   params.append('endDate',   dateRange.end);
     if (typeFilter)      params.append('type',      typeFilter);
-    const qs = params.toString() ? `?${params}` : '';
+    params.append('page',     page);
+    params.append('pageSize', pageSize);
+    const qs = `?${params}`;
 
-    const { data: records, isLoading, mutate } = useSWR(
+    const { data: resp, isLoading, mutate } = useSWR(
         `/api/stats/history${qs}`,
         fetcher,
         { keepPreviousData: true }
     );
+
+    const records    = resp?.data ?? [];
+    const total      = resp?.total ?? 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const firstItem  = total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const lastItem   = Math.min(page * pageSize, total);
 
     // ── Reimprimir ────────────────────────────────
     const handleReprint = async (row) => {
@@ -291,9 +343,45 @@ export default function RegistrosSection({ authHeaders }) {
                         Limpiar
                     </button>
                 )}
-                <span style={{ marginLeft: 'auto', fontSize: '0.78rem', color: '#475569' }}>
-                    {isLoading ? 'Cargando...' : `${records?.length ?? 0} registro(s)`}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ fontSize: '0.78rem', color: '#475569' }}>Mostrar</span>
+                    <select
+                        value={pageSize}
+                        onChange={e => setPageSize(Number(e.target.value))}
+                        style={filterInputSt}
+                    >
+                        {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                </div>
+                <span style={{ fontSize: '0.78rem', color: '#475569' }}>
+                    {isLoading ? 'Cargando...' : `${total} registro(s)`}
                 </span>
+                <button
+                    onClick={handleDownloadExcel}
+                    disabled={downloading}
+                    title="Descarga Excel completo: todos los registros + auditoría manual + resumen de totales"
+                    style={{
+                        marginLeft: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.4rem 0.9rem',
+                        background: downloading ? 'rgba(16,185,129,0.05)' : 'rgba(16,185,129,0.12)',
+                        border: '1px solid rgba(16,185,129,0.3)',
+                        borderRadius: '0.4rem',
+                        color: downloading ? '#475569' : '#10b981',
+                        cursor: downloading ? 'not-allowed' : 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: '600',
+                        transition: 'all 0.15s',
+                        whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={e => { if (!downloading) e.currentTarget.style.background = 'rgba(16,185,129,0.2)'; }}
+                    onMouseLeave={e => { if (!downloading) e.currentTarget.style.background = 'rgba(16,185,129,0.12)'; }}
+                >
+                    <Download size={13} />
+                    {downloading ? 'Generando...' : 'Excel Completo'}
+                </button>
             </div>
 
             {/* Tabla */}
@@ -309,7 +397,7 @@ export default function RegistrosSection({ authHeaders }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {(records || []).map(row => {
+                        {records.map(row => {
                             const badge   = getBadge(row.type);
                             const prtMsg  = reprintMsg[row.id];
                             const blocked = row.status === 'Bloqueado';
@@ -384,7 +472,7 @@ export default function RegistrosSection({ authHeaders }) {
                                 </tr>
                             );
                         })}
-                        {!isLoading && (records || []).length === 0 && (
+                        {!isLoading && records.length === 0 && (
                             <tr>
                                 <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#475569', fontSize: '0.875rem' }}>
                                     Sin registros para el filtro seleccionado
@@ -394,6 +482,18 @@ export default function RegistrosSection({ authHeaders }) {
                     </tbody>
                 </table>
             </div>
+
+            {/* Paginación */}
+            {total > 0 && (
+                <Pagination
+                    page={page}
+                    totalPages={totalPages}
+                    firstItem={firstItem}
+                    lastItem={lastItem}
+                    total={total}
+                    onChange={setPage}
+                />
+            )}
 
             {/* Modal de edición */}
             {editingRow && (
@@ -410,6 +510,75 @@ export default function RegistrosSection({ authHeaders }) {
 // ──────────────────────────────────────────────────
 // Helpers de estilo
 // ──────────────────────────────────────────────────
+// Genera la lista de páginas a mostrar con elipsis: 1 … 4 5 [6] 7 8 … 20
+function buildPageList(page, totalPages) {
+    const delta = 2;
+    const pages = [];
+    const range = [];
+    for (let i = Math.max(2, page - delta); i <= Math.min(totalPages - 1, page + delta); i++) {
+        range.push(i);
+    }
+    if (totalPages >= 1) pages.push(1);
+    if (range[0] > 2) pages.push('…');
+    pages.push(...range);
+    if (range[range.length - 1] < totalPages - 1) pages.push('…');
+    if (totalPages > 1) pages.push(totalPages);
+    return pages;
+}
+
+function Pagination({ page, totalPages, firstItem, lastItem, total, onChange }) {
+    const pages = buildPageList(page, totalPages);
+    const navBtn = (disabled) => ({
+        display: 'flex', alignItems: 'center', gap: '0.2rem',
+        padding: '0.35rem 0.6rem',
+        background: disabled ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: '0.4rem',
+        color: disabled ? '#334155' : '#94a3b8',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontSize: '0.8rem',
+    });
+    return (
+        <div style={{
+            display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+            gap: '0.75rem', marginTop: '1rem',
+        }}>
+            <span style={{ fontSize: '0.78rem', color: '#475569' }}>
+                Mostrando {firstItem}–{lastItem} de {total}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                <button onClick={() => onChange(page - 1)} disabled={page <= 1} style={navBtn(page <= 1)}>
+                    <ChevronLeft size={14} /> Anterior
+                </button>
+                {pages.map((p, i) => p === '…' ? (
+                    <span key={`e${i}`} style={{ color: '#475569', padding: '0 0.25rem', fontSize: '0.8rem' }}>…</span>
+                ) : (
+                    <button
+                        key={p}
+                        onClick={() => onChange(p)}
+                        style={{
+                            minWidth: '2rem',
+                            padding: '0.35rem 0.5rem',
+                            background: p === page ? 'linear-gradient(135deg,#0ea5e9,#6366f1)' : 'rgba(255,255,255,0.05)',
+                            border: `1px solid ${p === page ? 'transparent' : 'rgba(255,255,255,0.08)'}`,
+                            borderRadius: '0.4rem',
+                            color: p === page ? 'white' : '#94a3b8',
+                            fontWeight: p === page ? '700' : '500',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                        }}
+                    >
+                        {p}
+                    </button>
+                ))}
+                <button onClick={() => onChange(page + 1)} disabled={page >= totalPages} style={navBtn(page >= totalPages)}>
+                    Siguiente <ChevronRight size={14} />
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function ActionBtn({ children, title, onClick, disabled, color }) {
     return (
         <button

@@ -27,4 +27,15 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
+function logError(contexto, error, req = null) {
+    const meta = { contexto };
+    if (req) {
+        meta.ruta = req.path;
+        meta.metodo = req.method;
+        meta.ip = req.ip;
+    }
+    logger.error(error.message, { ...meta, stack: error.stack });
+}
+
 module.exports = logger;
+module.exports.logError = logError;
